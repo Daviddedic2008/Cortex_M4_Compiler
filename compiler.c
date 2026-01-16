@@ -4,7 +4,7 @@
 #include "compiler.h"
 
 #if defined(__GNUC__) || defined(__clang__)
-	#define forceinline static inline __attribute__(always_inline)
+	#define forceinline static inline __attribute__((always_inline))
 #else
 	#define forceinline static inline
 #endif
@@ -34,8 +34,6 @@ enum keywordSubtype {
 	breakKey, continueKey, globalKey
 };
 
-enum operandType { constant, stackVar, registerVar, globalVar, nullVar };
-
 typedef struct{
 	char* str; uint16_t len;
 	uint8_t type, subtype;
@@ -62,15 +60,15 @@ uint8_t tokenCmpLiteral(token s, const char* lit){
 	return 1;
 }
 
-const char* src; token curToken;
+char* src; token curToken;
 void setSource(const char* c){src = c;}
 
 void nextToken(){
-	while(*src == ' ' || *src == '\n') src++;
-	curToken = (token){src, 0, 0, 0};
-	if(*src == '\0') return;
-	curToken.len++;
-	while(!isSingle(*src) && *src != ' ' && *src != '\n') {src++; curToken.len++;}
+	while(*src == ' ' || *src == '\n')src++;
+	curToken = (token){(void*)0, 0, nullToken, 0}; if(*src == '\0')return;
+	curToken.str = src; curToken.len = 0;
+	if(isSingle(*src)){src++; curToken.len++;}
+	else{while(*src != ' ' && !isSingle(*src) && *src != '\n'){src++; curToken.len++;}}
 	if (tokenCmpLiteral(curToken, "+")) { curToken.type = opToken; curToken.subtype = opAdd; }
 	else if (tokenCmpLiteral(curToken, "-")) { curToken.type = opToken; curToken.subtype = opSub; }
 	else if (tokenCmpLiteral(curToken, "*")) { curToken.type = opToken; curToken.subtype = opMul; }
@@ -121,8 +119,6 @@ void nextToken(){
 
 //#############################################################################################################################################
 // HEX EMITTER
-
-enum operandType { constant, stackVar, registerVar, globalVar, nullVar };
 
 typedef enum specialRegs {
 	scratchReg1 = 10,
@@ -228,18 +224,30 @@ uint8_t moveToRegs(const uint32_t stackOffset, const uint16_t priority) {
 //#############################################################################################################################################
 // STACK/REGISTER MANAGER
 
+enum operandType { constant, stackVar, registerVar, globalVar, nullVar };
+
 typedef struct{
 	uint32_t stackOffset, size;
 	const char* name; uint8_t strLen; uint8_t scope;
 }variableMetadata;
 
+typedef struct operand {
+	union {
+		uint32_t value; uint32_t address; variableMetadata* variable;
+	}val;
+	uint32_t size;
+	// address 16 gp regs
+	uint8_t operandType; uint8_t registerLocation;
+	uint8_t registerPreference;
+}operand;
+
 #define maxUserVariables 256
 variableMetadata variableBuffer[maxUserVariables]; uint8_t variableIdx = 0;
 uint32_t curStackOffset = 0; uint8_t curScope = 0;
 
-void addVariable(const char* name, const uint32_t size){
-	variableBuffer[variableIdx++] = (variableMetadata){curStackOffset, size, name, curScope}; 
-	curStackOffset += size; curStackoffset = (curStackOffset + 3) & ~3;
+void addVariable(const char* name, const uint8_t strLen, const uint32_t size){
+	variableBuffer[variableIdx++] = (variableMetadata){curStackOffset, size, name, strLen, curScope}; 
+	curStackOffset += size; curStackOffset = (curStackOffset + 3) & ~3;
 }
 
 void decrementScope(){
@@ -249,5 +257,3 @@ void decrementScope(){
 	}
 }
 forceinline void incrementScope(){curScope++;}
-
-

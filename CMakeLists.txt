@@ -14,3 +14,5 @@ add_executable(CortexM4Compiler
     main.c 
 	compiler.c
 )
+
+target_compile_options(CortexM4Compiler PRIVATE -w)
