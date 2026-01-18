@@ -9,6 +9,15 @@
 	#define forceinline static inline
 #endif
 
+#if defined(__x86_64__) || defined(_M_X64) || defined(__aarch64__) || defined(__LP64__)
+    #define unionType uint64_t
+    #define BITS 64
+#else
+    // 32-bit code here
+#define unionType uint32_t
+    #define BITS 32
+#endif
+
 //#############################################################################################################################################
 // TOKENIZER
 
@@ -224,7 +233,7 @@ uint8_t moveToRegs(const uint32_t stackOffset, const uint16_t priority) {
 //#############################################################################################################################################
 // STACK/REGISTER MANAGER
 
-enum operandType { constant, stackVar, registerVar, globalVar, nullVar };
+enum operandType { constant, stackVar, registerVar, stackTemp, nullVar };
 
 typedef struct{
 	uint32_t stackOffset, size;
@@ -233,27 +242,121 @@ typedef struct{
 
 typedef struct operand {
 	union {
-		uint32_t value; uint32_t address; variableMetadata* variable;
+		unionType value; variableMetadata* variable; unionType stackOffset;
 	}val;
 	uint32_t size;
 	// address 16 gp regs
 	uint8_t operandType; uint8_t registerLocation;
 	uint8_t registerPreference;
 }operand;
+#pragma pack(push, 1)
+typedef struct{uint8_t subtype, precedence;}operator;
+#pragma pack(pop)
 
 #define maxUserVariables 256
 variableMetadata variableBuffer[maxUserVariables]; uint8_t variableIdx = 0;
 uint32_t curStackOffset = 0; uint8_t curScope = 0;
+uint32_t curCompilerTempSz = 0;
 
 void addVariable(const char* name, const uint8_t strLen, const uint32_t size){
 	variableBuffer[variableIdx++] = (variableMetadata){curStackOffset, size, name, strLen, curScope}; 
 	curStackOffset += size; curStackOffset = (curStackOffset + 3) & ~3;
 }
 
+forceinline void addCompilerTemp(const uint32_t sz){curStackOffset += sz; curCompilerTempSz += sz;}
+
 void decrementScope(){
 	curScope--; if (variableIdx == 0) { return; }
 	for (variableMetadata* v = variableBuffer + variableIdx - 1; v >= variableBuffer && v->scope > curScope; v--) {
 		variableIdx--;
+		curStackOffset -= v->size;
 	}
+	curStackOffset -= curCompilerTempSz; curCompilerTempSz = 0;
 }
 forceinline void incrementScope(){curScope++;}
+
+forceinline uint8_t compareNames(const char* name, uint8_t len, const char* name2, uint8_t len2){
+	for(; len > 0 && len2 > 0;){if(name[--len] != name2[--len2]){return 0;}}
+	return (len + len2) == 0;
+}
+
+operand retrieveLocalVariable(const char* name, uint8_t len){
+	for (variableMetadata* v = variableBuffer + variableIdx - 1; v >= variableBuffer; v--) {
+		if (compareNames(name, len, v->name, v->strLen)) { return (operand) { .val.variable = v, v->size, stackVar, 0 }; }
+	}
+	return (operand) { 0, nullVar, 0 };
+}
+
+//#############################################################################################################################################
+// EXPRESSION PARSER/HEX
+
+operand assembleOp(const operator op, const operand* operands, uint8_t registerPermanence){
+	operand ret; const operand o2 = *operands; const operand o1 = *(operands - 1);
+	const uint32_t lowestSize = o2.size < o1.size ? o2.size : o1.size;
+	const uint32_t greatestSize = o2.size > o1.size ? o2.size : o1.size;
+	uint8_t num32BitTransfers = (lowestSize + 3) >> 2; uint8_t num32BitTransfersG = (greatestSize + 3) >> 2;
+	switch(op.subtype){
+		case opEqual:
+		ret = o1;
+		do{
+			num32BitTransfers--;
+			const uint8_t regDest = (o1.operandType == registerVar) ? (o1.registerLocation + num32BitTransfers) : scratchReg1; 
+			switch(o2.operandType){
+				case registerVar:
+				emitOpcode(mov_reg_reg_32); emitArgument(regDest, 4); emitArgument(o2.registerLocation + num32BitTransfers, 4);
+				break;
+				case stackVar:
+				loadRegisterFromStack(regDest, o2.val.variable->stackOffset + num32BitTransfers * 4);
+				break;
+				case stackTemp:
+				loadRegisterFromStack(regDest, o2.val.stackOffset + num32BitTransfers * 4);
+				break;
+				case constant:
+				storeConstantInReg(regDest, o2.val.value);
+				break;
+			}
+			if(o1.operandType == stackVar){storeRegisterIntoStack(regDest, o1.val.variable->stackOffset + num32BitTransfers * 4);}
+		}while(num32BitTransfers > 0);
+		break;
+		case opAdd:{
+		uint8_t regDest; const uint32_t stackOff = curStackOffset;
+		if(num32BitTransfersG > 1){
+			regDest = scratchReg2; curStackOffset += num32BitTransfersG * 4;
+			ret = (operand){stackOff, num32BitTransfersG * 4, stackTemp, 0, registerPermanence};
+		} else{
+			regDest = moveToRegs(1, registerPermanence); ret = (operand){0, 4, registerVar, regDest, registerPermanence};
+		}
+		const uint8_t regOp1 = scratchReg1; const uint8_t regOp2 = scratchReg2;
+		for(uint32_t nt = 0; nt < num32BitTransfersG; nt++){
+			switch(o1.operandType){
+				case stackVar: loadRegisterFromStack(scratchReg1, o1.val.variable->stackOffset + nt * 4); break;
+				case stackTmp: loadRegisterFromStack(scratchReg1, o1.val.stackOffset + nt * 4); break;
+				case constant: storeConstantInReg(scratchReg1, o1.val.value); break;
+				case registerVar: regOp1 = o1.registerLocation;
+			}
+			switch(o2.operandType){
+				case stackVar: loadRegisterFromStack(scratchReg2, o2.val.variable->stackOffset + nt * 4); break;
+				case stackTmp: loadRegisterFromStack(scratchReg2, o1.val.stackOffset + nt * 4); break;
+				case registerVar: regOp2 = o2.registerLocation;
+			}
+			if (o2.operandType == constant) { 
+				if (o2.val.value > 4095) {
+					storeConstantInReg(scratchReg2, o2.val.value);
+					emitOpcode(addw_reg_32); emitFlag(nt == 0); 
+					emitArgument(regDest, 4); emitArgument(regOp1, 4); emitArgument(scratchReg2, 4);
+				}
+				else {
+					emitOpcode(addw_imm_32); emitFlag(nt == 0); emitArgument(regDest, 4);
+					emitArgument(regOp1, 4);/*carry or not*/ emitArgument(o2.val.value, 12);
+				}
+			}
+			else {
+				emitOpcode(addw_reg_32); emitFlag(nt == 0); emitArgument(regDest, 4); emitArgument(regOp1, 4); emitArgument(regOp2, 4);
+			}
+			if (num32BitTransfersG > 1) { storeRegisterIntoStack(scratchReg2, stackOff + nt * 4); }
+		}
+		break;
+		}
+	}
+}
+
