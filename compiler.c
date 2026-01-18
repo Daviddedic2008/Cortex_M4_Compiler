@@ -233,7 +233,7 @@ uint8_t moveToRegs(const uint32_t stackOffset, const uint16_t priority) {
 //#############################################################################################################################################
 // STACK/REGISTER MANAGER
 
-enum operandType { constant, stackVar, registerVar, stackTemp, nullVar };
+enum operandType { constant, stackVar, registerVar, stackTmp, nullVar };
 
 typedef struct{
 	uint32_t stackOffset, size;
@@ -308,7 +308,7 @@ operand assembleOp(const operator op, const operand* operands, uint8_t registerP
 				case stackVar:
 				loadRegisterFromStack(regDest, o2.val.variable->stackOffset + num32BitTransfers * 4);
 				break;
-				case stackTemp:
+				case stackTmp:
 				loadRegisterFromStack(regDest, o2.val.stackOffset + num32BitTransfers * 4);
 				break;
 				case constant:
@@ -322,11 +322,11 @@ operand assembleOp(const operator op, const operand* operands, uint8_t registerP
 		uint8_t regDest; const uint32_t stackOff = curStackOffset;
 		if(num32BitTransfersG > 1){
 			regDest = scratchReg2; curStackOffset += num32BitTransfersG * 4;
-			ret = (operand){stackOff, num32BitTransfersG * 4, stackTemp, 0, registerPermanence};
+			ret = (operand){stackOff, num32BitTransfersG * 4, stackTmp, 0, registerPermanence};
 		} else{
 			regDest = moveToRegs(1, registerPermanence); ret = (operand){0, 4, registerVar, regDest, registerPermanence};
 		}
-		const uint8_t regOp1 = scratchReg1; const uint8_t regOp2 = scratchReg2;
+		uint8_t regOp1 = scratchReg1; uint8_t regOp2 = scratchReg2;
 		for(uint32_t nt = 0; nt < num32BitTransfersG; nt++){
 			switch(o1.operandType){
 				case stackVar: loadRegisterFromStack(scratchReg1, o1.val.variable->stackOffset + nt * 4); break;
