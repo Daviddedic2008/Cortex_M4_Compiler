@@ -210,7 +210,12 @@ void loadRegisterFromStack(const uint8_t reg, const uint32_t stackOffset) {
 		return;
 	}
 	emitOpcode(ldrw_imm_32); emitArgument(stackPointerReg, 4); emitArgument(reg, 4);
-	emitArgument(virtualRegFile[reg].stackOffset, 12);
+	emitArgument(stackOffset, 12);
+}
+
+forceinline void loadRegisterFromStackR(const uint8_t reg, const uint8_t reg2) {
+	emitOpcode(ldrw_reg_32); emitArgument(stackPointerReg, 4); emitArgument(reg, 4);
+	emitArgument(reg2, 4);
 }
 
 void flushRegister(uint8_t regIdx) {
@@ -237,7 +242,8 @@ enum operandType { constant, stackVar, registerVar, stackTmp, nullVar };
 
 typedef struct{
 	uint32_t stackOffset, size;
-	const char* name; uint8_t strLen; uint8_t scope;
+	const char* name; 
+	uint8_t strLen; uint8_t scope;
 }variableMetadata;
 
 typedef struct operand {
@@ -306,10 +312,22 @@ operand assembleOp(const operator op, const operand* operands, uint8_t registerP
 				emitOpcode(mov_reg_reg_32); emitArgument(regDest, 4); emitArgument(o2.registerLocation + num32BitTransfers, 4);
 				break;
 				case stackVar:
+				for(uint8_t ridx = 0; ridx < 10; ridx++){
+					if(virtualRegFile[ridx].stackOffset == o2.val.variable->stackOffset + num32BitTransfers * 4){
+						virtualRegFile[ridx] = (registerData){0, 0, 0};
+						break;
+					}
+				}
 				loadRegisterFromStack(regDest, o2.val.variable->stackOffset + num32BitTransfers * 4);
 				break;
 				case stackTmp:
 				loadRegisterFromStack(regDest, o2.val.stackOffset + num32BitTransfers * 4);
+				for(uint8_t ridx = 0; ridx < 10; ridx++){
+					if(virtualRegFile[ridx].stackOffset == o2.val.stackOffset + num32BitTransfers * 4){
+						virtualRegFile[ridx] = (registerData){0, 0, 0};
+						break;
+					}
+				}
 				break;
 				case constant:
 				storeConstantInReg(regDest, o2.val.value);
@@ -354,6 +372,41 @@ operand assembleOp(const operator op, const operand* operands, uint8_t registerP
 				emitOpcode(addw_reg_32); emitFlag(nt == 0); emitArgument(regDest, 4); emitArgument(regOp1, 4); emitArgument(regOp2, 4);
 			}
 			if (num32BitTransfersG > 1) { storeRegisterIntoStack(scratchReg2, stackOff + nt * 4); }
+		}
+		break;
+		}
+		case opDereference:{
+		uint8_t regDest;
+		if(o1.val.value > 1){
+			regDest = scratchReg1; curStackOffset += o1.val.value * 4;
+			ret = (operand){stackOff, o1.val.value * 4, stackTmp, 0, registerPermanence};
+		}
+		else{
+			regDest = moveToRegs(1, registerPermanence);
+			ret = (operand){0, 4, registerVar, regDest, registerPermanence};
+		}
+		uint8_t regOp2;
+		switch(o2.operandType){
+			case registerVar:
+			regOp2 = o2.registerLocation;
+			break;
+			case stackVar:
+			regOp2 = scratchReg2;
+			loadRegisterFromStack(scratchReg2, o2.val.variable.stackOffset);
+			break;
+			case stackTemp:
+			regOp2 = scratchReg2;
+			loadRegisterFromStack(scratchReg2, o2.stackOffset);
+			break;
+			case constant:
+			regOp2 = scratchReg2;
+			storeConstantInReg(scratchReg2, o2.val.value);
+		}
+		for(uint32_t nt = 0; nt < o1.val.value; nt++){
+			loadRegisterFromStackR(regDest, regOp2);
+			if(o1.val.value == 1){break;}
+			emitOpcode(addw_imm_32); emitFlag(0); emitArgument(regOp2, 4); emitArgument(1, 4);
+			storeRegisterIntoStack(regDest, stackOff + nt * 4);
 		}
 		break;
 		}
