@@ -125,7 +125,6 @@ void nextToken(){
 		curToken.type = identifierToken;
 		curToken.subtype = 0;
 	}
-	printf("%.*s\n", curToken.len, curToken.str);
 }
 
 //#############################################################################################################################################
@@ -165,14 +164,16 @@ void emitOpcode(const uint8_t code) {
 }
 
 void emitFlag(const uint8_t flag) {
-	printf(flag ? "CARRY\n" : "NO CARRY\n");
+	printf(!flag ? "CARRY\n" : "NO CARRY\n");
 }
 
 void emitArgument(const uint32_t arg, const uint8_t sz) {
-	printf("%d\n", arg);
+	printf("ARG %d\n", arg);
 }
 
 enum dirty_ { mod, unmod };
+
+#define nullMove 1
 
 typedef struct {
 	uint32_t stackOffset;
@@ -233,8 +234,9 @@ forceinline void flushRegisters(){
 uint8_t moveToRegs(const uint32_t stackOffset, const uint16_t priority) {
 	uint8_t lowestPriority = 0, fIdx = 0;
 	for (uint8_t r = 0; r < maxGPRegs; r++) {
-		if (virtualRegFile[r].stackOffset == stackOffset && stackOffset != 1) { return r; }
-		if (virtualRegFile[r].priority < lowestPriority) { lowestPriority = virtualRegFile[r].priority; fIdx = r; }
+		if(virtualRegFile[r].stackOffset == 0)  return r;
+		if (virtualRegFile[r].stackOffset == stackOffset && stackOffset != 1) return r; 
+		if (virtualRegFile[r].priority < lowestPriority) lowestPriority = virtualRegFile[r].priority; fIdx = r;
 	}
 	flushRegister(fIdx);
 	loadRegisterFromStack(fIdx, stackOffset);
@@ -304,10 +306,9 @@ operand retrieveLocalVariable(const char* name, uint8_t len){
 //#############################################################################################################################################
 // OPERATION PARSER/HEX EMITTER
 
-#define nullMove 1
-
 operand assembleOp(const operator op, const operand* operands, const uint8_t registerPermanence){
 	operand ret, o1, o2;
+	printf("\n");
 	switch(op.subtype){
 		case opEqual:{
 		o2 = *operands; o1 = *(operands - 1);
@@ -319,9 +320,10 @@ operand assembleOp(const operator op, const operand* operands, const uint8_t reg
 			if(o1.operandType == registerVar){
 				regDest = o1.registerLocation + num32BitTransfers;
 				virtualRegFile[regDest].dirty = 1;
-			} else regDest = scratchReg1;
+			} else regDest = o2.operandType == registerVar ? o2.registerLocation + num32BitTransfers : scratchReg1;
 			switch(o2.operandType){
 				case registerVar:
+				if(o1.operandType != registerVar) break;
 				emitOpcode(mov_reg_reg_32); emitArgument(regDest, 4); emitArgument(o2.registerLocation + num32BitTransfers, 4);
 				break;
 				case stackVar:
@@ -432,6 +434,7 @@ operand assembleOp(const operator op, const operand* operands, const uint8_t reg
 		break;
 		}
 	}
+	return ret;
 }
 
 //#############################################################################################################################################
@@ -465,19 +468,21 @@ void assembleSource(){
 			allocationFound = 1;
 			break;
 			case identifierToken:
-			if(allocationSz > 0) operandStack[operandIdx++] = (operand){.val.variable = addVariable(curToken.str, curToken.len, allocationSz)};
+			if(allocationSz > 0){
+				operandStack[operandIdx++] = (operand){.val.variable = addVariable(curToken.str, curToken.len, allocationSz), allocationSz, stackVar, 0, registerPermanence};
+				allocationSz = 0;
+			}
 			else operandStack[operandIdx++] = retrieveLocalVariable(curToken.str, curToken.len);
 			break;
 			case opToken:
 			const uint32_t curPrecedence = operatorPrecedence[curToken.subtype] + precedence;
-			uint32_t prevPrecedence = UINT32_MAX;
-			while(curPrecedence <= prevPrecedence){
-				prevPrecedence = operatorIdx > 0 ? operatorStack[operatorIdx-1].precedence : 0;
+			while(1){
+				uint32_t prevPrecedence = operatorIdx > 0 ? operatorStack[operatorIdx-1].precedence : 0;
+				if(curPrecedence > prevPrecedence) break;
 				const operand tmp = assembleOp(operatorStack[--operatorIdx], operandStack + operandIdx - 1, registerPermanence);
 				operandIdx -= operatorStack[operatorIdx].subtype == opReference ? 1 : 2;
 				operandStack[operandIdx++] = tmp;
-			}
-			else operatorStack[operatorIdx++] = (operator){curToken.subtype, curPrecedence};
+			} operatorStack[operatorIdx++] = (operator){curToken.subtype, curPrecedence};
 			break;
 			case clampToken:
 			precedence += (curToken.subtype == parenthesesL) * 10 - (curToken.subtype == parenthesesR) * 10;
