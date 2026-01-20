@@ -177,10 +177,11 @@ typedef struct {
 	uint16_t dirty, priority;
 }registerData;
 
-registerData virtualRegFile[10]; // 10 data registers
+#define maxGPRegs 10
+registerData virtualRegFile[maxGPRegs]; // 10 data registers
 
 void initializeVirtualRegs() {
-	for (uint8_t idx = 0; idx < 10; idx++) {
+	for (uint8_t idx = 0; idx < maxGPRegs; idx++) {
 		virtualRegFile[idx] = (registerData){ 0,0,0 };
 	}
 }
@@ -224,14 +225,14 @@ void flushRegister(uint8_t regIdx) {
 }
 
 forceinline void flushRegisters(){
-	for(uint8_t idx = 0; idx < 10; idx++) flushRegister(idx);
+	for(uint8_t idx = 0; idx < maxGPRegs; idx++) flushRegister(idx);
 }
 
 uint8_t moveToRegs(const uint32_t stackOffset, const uint16_t priority) {
 	uint8_t lowestPriority = 0, fIdx = 0;
-	for (uint8_t r = 0; r < 10; r++) {
+	for (uint8_t r = 0; r < maxGPRegs; r++) {
 		if (virtualRegFile[r].stackOffset == stackOffset && stackOffset != 1) { return r; }
-		if (virtualRegFile[r].priority > lowestPriority) { lowestPriority = virtualRegFile[r].priority; fIdx = r; }
+		if (virtualRegFile[r].priority < lowestPriority) { lowestPriority = virtualRegFile[r].priority; fIdx = r; }
 	}
 	flushRegister(fIdx);
 	loadRegisterFromStack(fIdx, stackOffset);
@@ -268,9 +269,10 @@ variableMetadata variableBuffer[maxUserVariables]; uint8_t variableIdx = 0;
 uint32_t curStackOffset = 0; uint8_t curScope = 0;
 uint32_t curCompilerTempSz = 0;
 
-void addVariable(const char* name, const uint8_t strLen, const uint32_t size){
-	variableBuffer[variableIdx++] = (variableMetadata){curStackOffset, size, name, strLen, curScope}; 
+variableMetadata* addVariable(const char* name, const uint8_t strLen, const uint32_t size){
+	variableBuffer[variableIdx] = (variableMetadata){curStackOffset, size, name, strLen, curScope}; 
 	curStackOffset += size; curStackOffset = (curStackOffset + 3) & ~3;
+	return variableBuffer + (variableIdx++);
 }
 
 forceinline void addCompilerTemp(const uint32_t sz){curStackOffset += sz; curCompilerTempSz += sz;}
@@ -298,7 +300,7 @@ operand retrieveLocalVariable(const char* name, uint8_t len){
 }
 
 //#############################################################################################################################################
-// EXPRESSION PARSER/HEX
+// OPERATION PARSER/HEX EMITTER
 
 #define nullMove 1
 
@@ -323,7 +325,7 @@ operand assembleOp(const operator op, const operand* operands, const uint8_t reg
 				emitOpcode(mov_reg_reg_32); emitArgument(regDest, 4); emitArgument(o2.registerLocation + num32BitTransfers, 4);
 				break;
 				case stackVar:
-				for(uint8_t ridx = 0; ridx < 10; ridx++){
+				for(uint8_t ridx = 0; ridx < maxGPRegs; ridx++){
 					if(virtualRegFile[ridx].stackOffset == o2.val.variable->stackOffset + num32BitTransfers * 4){
 						virtualRegFile[ridx] = (registerData){0, 0, 0};
 						break;
@@ -333,7 +335,7 @@ operand assembleOp(const operator op, const operand* operands, const uint8_t reg
 				break;
 				case stackTmp:
 				loadRegisterFromStack(regDest, o2.val.stackOffset + num32BitTransfers * 4);
-				for(uint8_t ridx = 0; ridx < 10; ridx++){
+				for(uint8_t ridx = 0; ridx < maxGPRegs; ridx++){
 					if(virtualRegFile[ridx].stackOffset == o2.val.stackOffset + num32BitTransfers * 4){
 						virtualRegFile[ridx] = (registerData){0, 0, 0};
 						break;
@@ -432,3 +434,61 @@ operand assembleOp(const operator op, const operand* operands, const uint8_t reg
 	}
 }
 
+//#############################################################################################################################################
+// EXPRESSION PARSER
+
+#define maxOperatorDepth 100
+#define maxOperands 200
+
+const uint8_t operatorPrecedence[] = { 3, 3, 4, 4, 1, 7, 7, 2, 2, 2, 5, 5, 6, 5, 5, 6, 8 };
+
+void assembleSource(){
+	operator operatorStack[maxOperatorDepth]; uint8_t operatorIdx = 0;
+	operand operandStack[maxOperands]; uint8_t operandIdx = 0;
+	uint8_t registerPermanence = 0;
+	uint32_t allocationSz = 0; uint8_t allocationFound = 0;
+	uint8_t precedence = 0;
+	curToken.type = opToken;
+	while(curToken.type != nullToken){
+		nextToken();	
+		switch(curToken.type){
+			case constantToken:
+			uint32_t literal = 0;
+			for(uint8_t digit = curToken.len - 1; digit >= 0; digit--){
+				literal *= 10;
+				literal += curToken.str[digit] - '0';
+			}
+			if(allocationFound){allocationFound = 0; allocationSz = literal; break;}
+			operandStack[operandIdx++] = (operand){literal, 4, constant, 0, registerPermanence};
+			break;
+			case sizeToken:
+			allocationFound = 1;
+			break;
+			case identifierToken:
+			if(allocationSz > 0) operandStack[operandIdx++] = (operand){.val.variable = addVariable(curToken.str, curToken.len, allocationSz)};
+			else operandStack[operandIdx++] = retrieveLocalVariable(curToken.str, curToken.len);
+			break;
+			case opToken:
+			const uint32_t curPrecedence = operatorPrecedence[curToken.subtype] + precedence;
+			const uint32_t prevPrecedence = operatorIdx > 0 ? operatorStack[operatorIdx-1].precedence : 0;
+			if(curPrecedence <= prevPrecedence){
+				const operand tmp = assembleOp((operator){curToken.subtype, curPrecedence}, operandStack + operandIdx - 1, registerPermanence);
+				operandIdx -= curToken.subtype == opReference ? 1 : 2;
+				operandStack[operandIdx++] = tmp;
+			}
+			else operatorStack[operatorIdx++] = (operator){curToken.subtype, curPrecedence};
+			break;
+			case clampToken:
+			precedence += (curToken.subtype == parenthesesL) * 10 - (curToken.subtype == parenthesesR) * 10;
+			break;
+			case endLine:
+			goto breakOutOfShunting;
+		}
+	}
+	breakOutOfShunting:;
+	for(uint8_t idx = 0; idx < operatorIdx; idx++){
+		const operand tmp = assembleOp(operatorStack[idx], operandStack + operandIdx - 1, registerPermanence);
+		operandIdx -= operatorStack[idx].subtype == opReference ? 1 : 2;
+		operandStack[operandIdx++] = tmp;
+	}
+}
