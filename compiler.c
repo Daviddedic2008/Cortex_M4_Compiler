@@ -319,8 +319,6 @@ operand assembleOp(const operator op, const operand* operands, const uint8_t reg
 				virtualRegFile[regDest].dirty = 1;
 			} else regDest = scratchReg1;
 			switch(o2.operandType){
-			}
-			switch(o2.operandType){
 				case registerVar:
 				emitOpcode(mov_reg_reg_32); emitArgument(regDest, 4); emitArgument(o2.registerLocation + num32BitTransfers, 4);
 				break;
@@ -454,7 +452,7 @@ void assembleSource(){
 		switch(curToken.type){
 			case constantToken:
 			uint32_t literal = 0;
-			for(uint8_t digit = curToken.len - 1; digit >= 0; digit--){
+			for(uint8_t digit = 0; digit < curToken.len; digit++){
 				literal *= 10;
 				literal += curToken.str[digit] - '0';
 			}
@@ -486,7 +484,7 @@ void assembleSource(){
 		}
 	}
 	breakOutOfShunting:;
-	for(uint8_t idx = 0; idx < operatorIdx; idx++){
+	for(int8_t idx = operatorIdx - 1; idx >= 0; idx--){
 		const operand tmp = assembleOp(operatorStack[idx], operandStack + operandIdx - 1, registerPermanence);
 		operandIdx -= operatorStack[idx].subtype == opReference ? 1 : 2;
 		operandStack[operandIdx++] = tmp;
