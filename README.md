@@ -7,12 +7,12 @@ A lightweight C-based compiler targeting the ARM Cortex-M4 architecture. This pr
 * **Host Build:** Windows x64 using GNU GCC.
 * **Feature Goal:** Self-hosting capabilities and direct flashing to hardware.
 
-## Project Structure
-* `main.c`: Entry point and driver logic.
-* `lexer.c / .h`: Lexical analysis and tokenization.
+## Project Files
+* `main.c
+* `compiler.c : Main file
 * `CMakeLists.txt`: Build system configuration.
 * `bld.bat`: Standard build and run script.
-* `remake.bat`: Deep clean and cache refresh script.
+* `remake.bat`: Clean and cache refresh script.
 
 ## Usage
 

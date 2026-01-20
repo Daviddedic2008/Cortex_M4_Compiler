@@ -219,7 +219,7 @@ forceinline void loadRegisterFromStackR(const uint8_t reg, const uint8_t reg2) {
 }
 
 void flushRegister(uint8_t regIdx) {
-	if (virtualRegFile[regIdx].dirty) { storeRegisterIntoStack(regIdx, virtualRegFile[regIdx].stackOffset); }
+	if(virtualRegFile[regIdx].dirty) storeRegisterIntoStack(regIdx, virtualRegFile[regIdx].stackOffset);
 	virtualRegFile[regIdx].dirty = 0; virtualRegFile[regIdx].stackOffset = 0; // free
 }
 
@@ -296,13 +296,14 @@ operand retrieveLocalVariable(const char* name, uint8_t len){
 //#############################################################################################################################################
 // EXPRESSION PARSER/HEX
 
-operand assembleOp(const operator op, const operand* operands, uint8_t registerPermanence){
-	operand ret; const operand o2 = *operands; const operand o1 = *(operands - 1);
-	const uint32_t lowestSize = o2.size < o1.size ? o2.size : o1.size;
-	const uint32_t greatestSize = o2.size > o1.size ? o2.size : o1.size;
-	uint8_t num32BitTransfers = (lowestSize + 3) >> 2; uint8_t num32BitTransfersG = (greatestSize + 3) >> 2;
+operand assembleOp(const operator op, const operand* operands, const uint8_t registerPermanence){
+	operand ret; operand o2; operand o1;
+	const uint32_t lowestSize, greatestSize;
+	uint8_t num32BitTransfers, num32BitTransfersG;
 	switch(op.subtype){
 		case opEqual:
+		o2 = *operands; o1 = *(operands - 1);
+		num32BitTransfers = ((o1.size < o2.size ? o1.size : o2.size) + 3) << 2;
 		ret = o1;
 		do{
 			num32BitTransfers--;
@@ -337,12 +338,16 @@ operand assembleOp(const operator op, const operand* operands, uint8_t registerP
 		}while(num32BitTransfers > 0);
 		break;
 		case opAdd:{
+		o2 = *operands; o1 = *(operands - 1);
+		num32BitTransfersG = ((o1.size > o2.size ? o1.size : o2.size) + 3) << 2;
 		uint8_t regDest; const uint32_t stackOff = curStackOffset;
+		curStackOffset += num32BitTransfersG * 4;
 		if(num32BitTransfersG > 1){
-			regDest = scratchReg2; curStackOffset += num32BitTransfersG * 4;
+			regDest = scratchReg2;
 			ret = (operand){stackOff, num32BitTransfersG * 4, stackTmp, 0, registerPermanence};
 		} else{
-			regDest = moveToRegs(1, registerPermanence); ret = (operand){0, 4, registerVar, regDest, registerPermanence};
+			regDest = moveToRegs(1, registerPermanence); virtualRegFile[regDest].stackOffset = stackOff; 
+			ret = (operand){stackOff, 4, registerVar, regDest, registerPermanence};
 		}
 		uint8_t regOp1 = scratchReg1; uint8_t regOp2 = scratchReg2;
 		for(uint32_t nt = 0; nt < num32BitTransfersG; nt++){
@@ -376,14 +381,17 @@ operand assembleOp(const operator op, const operand* operands, uint8_t registerP
 		break;
 		}
 		case opDereference:{
+		o2 = *operands; o1 = *(operands - 1);
 		uint8_t regDest;
+		const uint32_t stackOff = curStackOffset;
+		curStackOffset += o1.val.value * 4; curCompilerTempSz += o1.val.value * 4;
 		if(o1.val.value > 1){
-			regDest = scratchReg1; curStackOffset += o1.val.value * 4;
+			regDest = scratchReg1;
 			ret = (operand){stackOff, o1.val.value * 4, stackTmp, 0, registerPermanence};
 		}
 		else{
-			regDest = moveToRegs(1, registerPermanence);
-			ret = (operand){0, 4, registerVar, regDest, registerPermanence};
+			regDest = moveToRegs(1, registerPermanence); virtualRegFile[regDest].stackOffset = stackOff;
+			ret = (operand){stackOff, 4, registerVar, regDest, registerPermanence};
 		}
 		uint8_t regOp2;
 		switch(o2.operandType){
@@ -392,11 +400,11 @@ operand assembleOp(const operator op, const operand* operands, uint8_t registerP
 			break;
 			case stackVar:
 			regOp2 = scratchReg2;
-			loadRegisterFromStack(scratchReg2, o2.val.variable.stackOffset);
+			loadRegisterFromStack(scratchReg2, o2.val.variable->stackOffset);
 			break;
-			case stackTemp:
+			case stackTmp:
 			regOp2 = scratchReg2;
-			loadRegisterFromStack(scratchReg2, o2.stackOffset);
+			loadRegisterFromStack(scratchReg2, o2.val.stackOffset);
 			break;
 			case constant:
 			regOp2 = scratchReg2;
@@ -410,6 +418,16 @@ operand assembleOp(const operator op, const operand* operands, uint8_t registerP
 		}
 		break;
 		}
+		case opReference:
+		o1 = *operands;
+		if(o1.operandType == registerVar){
+			flushRegister(o1.registerLocation);
+		}
+		const uint8_t regDest = moveToRegs(1, registerPermanence); virtualRegFile[regDest].stackOffset = curStackOffset;
+		ret = (operand){curStackOffset, 4, registerVar, registerPermanence};
+		storeConstantInReg(regDest, o1.val.stackOffset);
+		curStackOffset += 4; curCompilerTempSz += 4;
+		break;
 	}
 }
 
