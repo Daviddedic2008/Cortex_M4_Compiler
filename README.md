@@ -8,8 +8,8 @@ A lightweight C-based compiler targeting the ARM Cortex-M4 architecture. This pr
 * **Feature Goal:** Self-hosting capabilities and direct flashing to hardware.
 
 ## Project Files
-* `main.c
-* `compiler.c : Main file
+* `main.c`
+* `compiler.c` : Main file
 * `CMakeLists.txt`: Build system configuration.
 * `bld.bat`: Standard build and run script.
 * `remake.bat`: Clean and cache refresh script.
