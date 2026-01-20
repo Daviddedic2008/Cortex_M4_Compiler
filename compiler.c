@@ -18,6 +18,8 @@
     #define BITS 32
 #endif
 
+#define UINT32_MAX 0xFFFFFFFF
+
 //#############################################################################################################################################
 // TOKENIZER
 
@@ -468,10 +470,11 @@ void assembleSource(){
 			break;
 			case opToken:
 			const uint32_t curPrecedence = operatorPrecedence[curToken.subtype] + precedence;
-			const uint32_t prevPrecedence = operatorIdx > 0 ? operatorStack[operatorIdx-1].precedence : 0;
-			if(curPrecedence <= prevPrecedence){
-				const operand tmp = assembleOp((operator){curToken.subtype, curPrecedence}, operandStack + operandIdx - 1, registerPermanence);
-				operandIdx -= curToken.subtype == opReference ? 1 : 2;
+			uint32_t prevPrecedence = UINT32_MAX;
+			while(curPrecedence <= prevPrecedence){
+				prevPrecedence = operatorIdx > 0 ? operatorStack[operatorIdx-1].precedence : 0;
+				const operand tmp = assembleOp(operatorStack[--operatorIdx], operandStack + operandIdx - 1, registerPermanence);
+				operandIdx -= operatorStack[operatorIdx].subtype == opReference ? 1 : 2;
 				operandStack[operandIdx++] = tmp;
 			}
 			else operatorStack[operatorIdx++] = (operator){curToken.subtype, curPrecedence};
