@@ -80,51 +80,49 @@ void nextToken(){
 	curToken.str = src; curToken.len = 0;
 	if(isSingle(*src)){src++; curToken.len++;}
 	else{while(*src != ' ' && !isSingle(*src) && *src != '\n'){src++; curToken.len++;}}
-	if (tokenCmpLiteral(curToken, "+")) { curToken.type = opToken; curToken.subtype = opAdd; }
-	else if (tokenCmpLiteral(curToken, "-")) { curToken.type = opToken; curToken.subtype = opSub; }
-	else if (tokenCmpLiteral(curToken, "*")) { curToken.type = opToken; curToken.subtype = opMul; }
-	else if (tokenCmpLiteral(curToken, "%")) { curToken.type = opToken; curToken.subtype = opDiv; }          // division now %
-	else if (tokenCmpLiteral(curToken, "ref")) { curToken.type = opToken; curToken.subtype = opReference; }    // / is reference
-	else if (tokenCmpLiteral(curToken, "deref")) { curToken.type = opToken; curToken.subtype = opDereference; } // \ is dereference
-	else if (tokenCmpLiteral(curToken, "=")) { curToken.type = opToken; curToken.subtype = opEqual; }
-	else if (tokenCmpLiteral(curToken, ">")) { curToken.type = opToken; curToken.subtype = opCmpGreater; }
-	else if (tokenCmpLiteral(curToken, "<")) { curToken.type = opToken; curToken.subtype = opCmpLess; }
-	else if (tokenCmpLiteral(curToken, "==")) { curToken.type = opToken; curToken.subtype = opCmpEqual; }
-	else if (tokenCmpLiteral(curToken, "|")) { curToken.type = opToken; curToken.subtype = opBitwiseOr; }
-	else if (tokenCmpLiteral(curToken, "&")) { curToken.type = opToken; curToken.subtype = opBitwiseAnd; }
-	else if (tokenCmpLiteral(curToken, "or")) { curToken.type = opToken; curToken.subtype = opLogicalOr; }
-	else if (tokenCmpLiteral(curToken, "and")) { curToken.type = opToken; curToken.subtype = opLogicalAnd; }
-	else if (tokenCmpLiteral(curToken, "!")) { curToken.type = opToken; curToken.subtype = opBitwiseNot; }
-	else if (tokenCmpLiteral(curToken, "not")) { curToken.type = opToken; curToken.subtype = opLogicalNot; }
-	else if (tokenCmpLiteral(curToken, "castptr")) { curToken.type = opToken; curToken.subtype = opPointerCast; }
-
-	// clamps
-	else if (tokenCmpLiteral(curToken, "(")) { curToken.type = clampToken; curToken.subtype = parenthesesL; }
-	else if (tokenCmpLiteral(curToken, ")")) { curToken.type = clampToken; curToken.subtype = parenthesesR; }
-	else if (tokenCmpLiteral(curToken, "{")) { curToken.type = clampToken; curToken.subtype = curlyBL; }
-	else if (tokenCmpLiteral(curToken, "}")) { curToken.type = clampToken; curToken.subtype = curlyBR; }
-
-	// end of line
-	else if (tokenCmpLiteral(curToken, ";")) { curToken.type = endLine; }
-
-	// size (byte)
-	else if (tokenCmpLiteral(curToken, "word")) { curToken.type = sizeToken; curToken.subtype = 0; }
-
-	// keywords
-	else if (tokenCmpLiteral(curToken, "if")) { curToken.type = keywordToken; curToken.subtype = ifKey; }
-	else if (tokenCmpLiteral(curToken, "for")) { curToken.type = keywordToken; curToken.subtype = forKey; }
-	else if (tokenCmpLiteral(curToken, "while")) { curToken.type = keywordToken; curToken.subtype = whileKey; }
-	else if (tokenCmpLiteral(curToken, "continue")) { curToken.type = keywordToken; curToken.subtype = continueKey; }
-	else if (tokenCmpLiteral(curToken, "break")) { curToken.type = keywordToken; curToken.subtype = breakKey; }
-	else if (tokenCmpLiteral(curToken, "global")) { curToken.type = keywordToken; curToken.subtype = globalKey; }
-
-	else if (curToken.str[0] >= '0' && curToken.str[0] <= '9') { curToken.type = constantToken; curToken.subtype = 0; }
-
-	// fallback on null
-	else {
-		curToken.type = identifierToken;
-		curToken.subtype = 0;
-	}
+	switch(*(curToken.str)){
+		case '+': curToken.type = opToken; curToken.subtype = opAdd;break;
+		case '-': curToken.type = opToken; curToken.subtype = opSub;break;
+		case '*': curToken.type = opToken; curToken.subtype = opMul;break;
+		case '/': curToken.type = opToken; curToken.subtype = opDiv;break;
+		case '=': curToken.type = opToken; curToken.subtype = opEqual;break;
+		case '>': curToken.type = opToken; curToken.subtype = opCmpGreater;break;
+		case '<': curToken.type = opToken; curToken.subtype = opCmpLess;break;
+		case '|': curToken.type = opToken; curToken.subtype = opBitwiseOr;break;
+		case '&': curToken.type = opToken; curToken.subtype = opBitwiseAnd;break;
+		case '!': curToken.type = opToken; curToken.subtype = opBitwiseNot;break;
+		case '(': curToken.type = clampToken; curToken.subtype = parenthesesL;break;
+		case ')': curToken.type = clampToken; curToken.subtype = parenthesesR;break;
+		case '{': curToken.type = clampToken; curToken.subtype = curlyBL;break;
+		case '}': curToken.type = clampToken; curToken.subtype = curlyBR;break;
+		case ';': curToken.type = endLine; curToken.subtype = 0;break;
+		case 'r': if(tokenCmpLiteral(curToken, "ref")){curToken.type = opToken; curToken.subtype = opReference;}
+		else{curToken.type = identifierToken; curToken.subtype = 0;} break;
+		case 'd': if(tokenCmpLiteral(curToken, "deref")){curToken.type = opToken; curToken.subtype = opDereference;}
+		else{curToken.type = identifierToken; curToken.subtype = 0;} break;
+		case 'o': if(tokenCmpLiteral(curToken, "or")){curToken.type = opToken; curToken.subtype = opLogicalOr;}
+		else{curToken.type = identifierToken; curToken.subtype = 0;} break;
+		case 'a': if(tokenCmpLiteral(curToken, "and")){curToken.type = opToken; curToken.subtype = opLogicalAnd;}
+		else{curToken.type = identifierToken; curToken.subtype = 0;} break;
+		case 'n': if(tokenCmpLiteral(curToken, "not")){curToken.type = opToken; curToken.subtype = opLogicalNot;}
+		else{curToken.type = identifierToken; curToken.subtype = 0;} break;
+		case 'e': if(tokenCmpLiteral(curToken, "equals")){curToken.type = opToken; curToken.subtype = opCmpEqual;}
+		else{curToken.type = identifierToken; curToken.subtype = 0;} break;
+		case 'i': if(tokenCmpLiteral(curToken, "if")){curToken.type = keywordToken; curToken.subtype = ifKey;}
+		else{curToken.type = identifierToken; curToken.subtype = 0;} break;
+		case 'f': if(tokenCmpLiteral(curToken, "for")){curToken.type = keywordToken; curToken.subtype = forKey;}
+		else{curToken.type = identifierToken; curToken.subtype = 0;} break;
+		case 'c': if(tokenCmpLiteral(curToken, "continue")){curToken.type = keywordToken; curToken.subtype = continueKey;}
+		else{curToken.type = identifierToken; curToken.subtype = 0;} break;
+		case 'b': if(tokenCmpLiteral(curToken, "break")){curToken.type = keywordToken; curToken.subtype = breakKey;}
+		else{curToken.type = identifierToken; curToken.subtype = 0;} break;
+		case 'w': if(tokenCmpLiteral(curToken, "while")){curToken.type = keywordToken; curToken.subtype = whileKey;}
+		else if(tokenCmpLiteral(curToken, "word")){curToken.type = sizeToken; curToken.subtype = 0;}
+		else{curToken.type = identifierToken; curToken.subtype = 0;} break;
+		default:
+		if(*(curToken.str) >= '0' && *(curToken.str) < '9'){curToken.type = constantToken; curToken.subtype = 0;}
+		else{curToken.type = identifierToken; curToken.subtype = 0;}
+	}	
 }
 
 //#############################################################################################################################################

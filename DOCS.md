@@ -63,7 +63,7 @@ A virtual register file where each register has a permanence allows compiler tem
 Arithmetic operations are standard, with compiler accepting plus, minus, times, and division following c syntax.
 Parentheses are supported and all operators evaluate with left-first precedence. 
 
-Important Differences: 
+*Important Differences: 
 	* Only the first 32 bits of values will be multiplied/divided. Long multiplication/division isn't supported.
 	* Addition works with any sizes
 	* USE 32 BIT VALUES FOR ARITHMETIC! Using larger values will result in unneeded load/store pairs.
