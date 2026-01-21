@@ -218,9 +218,20 @@ void loadRegisterFromStack(const uint8_t reg, const uint32_t stackOffset) {
 	emitArgument(stackOffset, 12);
 }
 
+void loadRegisterFromStackAbs(const uint8_t reg, const uint32_t stackOffset) {
+	storeConstantInReg(scratchReg1, stackOffset);
+	emitOpcode(ldrw_imm_32); emitArgument(scratchReg1, 4); emitArgument(reg, 4);
+	emitArgument(0, 12);
+}
+
 forceinline void loadRegisterFromStackR(const uint8_t reg, const uint8_t reg2) {
 	emitOpcode(ldrw_reg_32); emitArgument(stackPointerReg, 4); emitArgument(reg, 4);
 	emitArgument(reg2, 4);
+}
+
+forceinline void loadRegisterFromStackRAbs(const uint8_t reg, const uint8_t reg2) {
+	emitOpcode(ldrw_imm_32); emitArgument(reg2, 4); emitArgument(reg, 4);
+	emitArgument(0, 12);
 }
 
 void flushRegister(uint8_t regIdx) {
@@ -419,16 +430,18 @@ operand assembleOp(const operator op, const operand* operands, const uint8_t reg
 		for(uint32_t nt = 0; nt < o1.val.value; nt++){
 			switch(o2.operandType){
 				case registerVar:
-				emitOpcode(mov_reg_reg_32); emitArgument(regDest, 4); emitArgument(o2.registerLocation, 4);
+				loadRegisterFromStackRAbs(regDest, o2.registerLocation);
 				break;
 				case stackVar:
 				loadRegisterFromStack(regDest, o2.val.variable->stackOffset + nt);
+				loadRegisterFromStackRAbs(regDest, regDest);
 				break;
 				case stackTmp:
 				loadRegisterFromStack(regDest, o2.val.stackOffset + nt);
+				loadRegisterFromStackAbs(regDest, regDest);
 				break;
 				case constant:
-				loadRegisterFromStack(regDest, o2.val.value + nt);
+				loadRegisterFromStackAbs(regDest, o2.val.value + nt);
 			}
 			if(o1.val.value == 1){break;}
 			storeRegisterIntoStack(regDest, previousStackOffset + nt * 4);
@@ -441,6 +454,7 @@ operand assembleOp(const operator op, const operand* operands, const uint8_t reg
 		uint8_t regDest = moveToRegs(1, registerPermanence); virtualRegFile[regDest].stackOffset = curStackOffset;
 		virtualRegFile[regDest].dirty = registerTmp; storeConstantInReg(regDest, o1.operandType == stackTmp ? o1.val.stackOffset : o1.val.variable->stackOffset);
 		curStackOffset += 4; curCompilerTempSz += 4;
+		emitOpcode(addw_reg_32); emitArgument(regDest, 4); emitArgument(regDest, 4); emitArgument(stackPointerReg, 4);
 		ret = (operand){0, 4, registerVar, regDest, registerPermanence};
 		break;
 		}
