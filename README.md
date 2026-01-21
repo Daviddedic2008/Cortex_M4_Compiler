@@ -7,6 +7,9 @@ A lightweight C-based compiler targeting the ARM Cortex-M4 architecture. This pr
 * **Host Build:** Windows x64 using GNU GCC.
 * **Feature Goal:** Self-hosting capabilities and direct flashing to hardware.
 
+## Syntax & Docs
+* Read DOCS.md to gain an idea of how the language works.
+
 ## Project Files
 * `main.c`
 * `compiler.c` : Main file

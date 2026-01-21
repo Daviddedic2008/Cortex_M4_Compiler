@@ -21,6 +21,7 @@ word 4 buffer = 0;	// reserves 16 bytes (4 words) on the stack and zeros the var
 Pointers are simply 1 word variables. 
 This compiler is made for 32 bit systems, so therefore only accepts 32 bit pointers.
 
+#### deref
 To get data stored at memory locations, use the deref operator.
 Pointer 'casting' is done at dereferencing, and therefore the operator takes a dereference size too.
 The size being dereferenced is static. you cannot dereference a dynamic amount of words.
@@ -32,6 +33,7 @@ word 1 pointer = 100;
 word 1 dereferencedPointer = 1 deref pointer; // reads one word from absolute memory location stored in 'pointer', e.g. 100
 ```
 
+#### ref
 To grab variable absolute addresses that persist across function calls, use the ref operator.
 Here, no 'casting' is done.
 When invoked, the compiler first flushes the variable being referenced from registers.

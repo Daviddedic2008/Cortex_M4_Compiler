@@ -451,10 +451,16 @@ operand assembleOp(const operator op, const operand* operands, const uint8_t reg
 		case opReference:{
 		o1 = *operands;
 		if(o1.operandType == registerVar) flushRegister(o1.registerLocation);
+		const uint32_t stackOffsetTmp = o1.operandType == stackTmp ? o1.val.stackOffset : o1.val.variable->stackOffset;
 		uint8_t regDest = moveToRegs(1, registerPermanence); virtualRegFile[regDest].stackOffset = curStackOffset;
-		virtualRegFile[regDest].dirty = registerTmp; storeConstantInReg(regDest, o1.operandType == stackTmp ? o1.val.stackOffset : o1.val.variable->stackOffset);
+		if(stackOffsetTmp < 4096){emitOpcode(addw_imm_32); emitArgument(regDest, 4); emitArgument(stackPointerReg, 4); emitArgument(stackOffsetTmp, 12);}
+		else{
+			storeConstantInReg(regDest, stackOffsetTmp);
+			emitOpcode(addw_reg_32); emitArgument(regDest, 4); emitArgument(regDest, 4); emitArgument(stackPointerReg, 4);
+		}
+		virtualRegFile[regDest].dirty = registerTmp; 
 		curStackOffset += 4; curCompilerTempSz += 4;
-		emitOpcode(addw_reg_32); emitArgument(regDest, 4); emitArgument(regDest, 4); emitArgument(stackPointerReg, 4);
+		
 		ret = (operand){0, 4, registerVar, regDest, registerPermanence};
 		break;
 		}
@@ -516,7 +522,6 @@ void assembleSource(){
 			precedence += (curToken.subtype == parenthesesL) * 10 - (curToken.subtype == parenthesesR) * 10;
 			break;
 			case endLine:
-			printf("\n");
 			for(int8_t idx = operatorIdx - 1; idx >= 0; idx--){
 				const operand tmp = assembleOp(operatorStack[idx], operandStack + operandIdx - 1, registerPermanence);
 				operandIdx -= operatorStack[idx].subtype == opReference ? 1 : 2;
