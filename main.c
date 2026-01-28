@@ -2,7 +2,8 @@
 #include "compiler.h"
 
 int main(){
-	setSource("word 1 x = 15; 1 deref x = 5;");
+	setSource("1 deref 100 = 5;");
+	initializeVirtualRegs();
 	assembleSource();
 	return 0;
 }
