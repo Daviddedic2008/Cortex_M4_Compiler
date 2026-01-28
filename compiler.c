@@ -427,28 +427,31 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 		curCompilerTempSz += 4; curStackOffset += 4;
 		return (operand){curStackOffset - 4, o1.val.value, stackVar, registerPermanence};
 		}
+		case opSub:
 		case opAdd:{
 		o2 = *operands; o1 = *(operands - 1);
 		const uint32_t num32BitAdds = ((o1.size > o2.size ? o1.size : o2.size) + 3) >> 2;
 		for(uint32_t wIdx = 0; wIdx < num32BitAdds; wIdx++){
 			const uint8_t r1 = o1.operandType == stackVar ? moveOffsetToRegs(o1.val.stackOffset + wIdx * 4, o1.val.stackOffset + wIdx * 4, registerPermanence) : moveConstantToRegs(o1.val.value, curStackOffset + wIdx * 4, registerPermanence);
 			const uint8_t saveDirty = virtualRegFile[r1].dirty;
-			const uint8_t resultReg = moveOffsetToRegs(UINT32_MAX, curStackOffset + wIdx * 4, registerPermanence);
-			virtualRegFile[r1].dirty = locked; virtualRegFile[resultReg].dirty = locked;
+			virtualRegFile[r1].dirty = locked;
+			const uint8_t resultReg = getEmptyRegister(0, registerPermanence, noCheck);
+			virtualRegFile[resultReg].stackOffset = curStackOffset + wIdx * 4;
+			virtualRegFile[resultReg].dirty = locked;
 			emitFlag(wIdx == 0);
 			switch(o2.operandType){
 				case stackVar:{
 				const uint8_t r2 = moveOffsetToRegs(o2.val.stackOffset + wIdx * 4, o2.val.stackOffset + wIdx * 4, registerPermanence);
-				emitOpcode(addw_reg_32); emitArgument(resultReg, 4); emitArgument(r1, 4); emitArgument(r2, 4);
+				emitOpcode(op.subtype == opAdd ? addw_reg_32 : subw_reg_32); emitArgument(resultReg, 4); emitArgument(r1, 4); emitArgument(r2, 4);
 				break;
 				}
 				case constant:
 				if(o2.val.value <= 4095){
-					emitOpcode(addw_imm_32); emitArgument(resultReg, 4); emitArgument(r1, 4); emitArgument(wIdx == 0 ? o2.val.value : 0, 12);
+					emitOpcode(op.subtype == opAdd ? addw_imm_32 : subw_imm_32); emitArgument(resultReg, 4); emitArgument(r1, 4); emitArgument(wIdx == 0 ? o2.val.value : 0, 12);
 					break;
 				}
 				const uint8_t r2 = moveConstantToRegs(o2.val.value, o2.val.stackOffset, registerPermanence);
-				emitOpcode(addw_reg_32); emitArgument(resultReg, 4); emitArgument(r1, 4); emitArgument(r2, 4);
+				emitOpcode(op.subtype == opAdd ? addw_reg_32 : subw_reg_32); emitArgument(resultReg, 4); emitArgument(r1, 4); emitArgument(r2, 4);
 				break;
 			}
 			virtualRegFile[r1].dirty = saveDirty;
@@ -456,6 +459,9 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 		}
 		curCompilerTempSz += 4; curStackOffset += 4;
 		return (operand){curStackOffset - 4, num32BitAdds * 4, stackVar, registerPermanence};
+		}
+		case opMul:{
+			const uint32_t num32BitMuls = ((o1.size > o2.size ? o1.size : o2.size) + 3) >> 2;
 		}
 	}
 	return ret;
