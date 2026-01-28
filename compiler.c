@@ -183,7 +183,7 @@ registerData virtualRegFile[maxGPRegs]; // 10 data registers
 
 void initializeVirtualRegs() {
 	for (uint8_t idx = 0; idx < maxGPRegs; idx++) {
-		virtualRegFile[idx] = (registerData){UINT32_MAX, empty, 0};
+		virtualRegFile[idx] = (registerData){UINT16_MAX, empty, UINT16_MAX};
 	}
 }
 
@@ -240,7 +240,7 @@ forceinline void loadRegisterFromStackRAbs(const uint8_t reg, const uint8_t reg2
 }
 void flushRegister(uint8_t regIdx) {
 	if(virtualRegFile[regIdx].dirty == locked) return;
-	if(virtualRegFile[regIdx].dirty == dirty) storeRegisterIntoStack(regIdx, virtualRegFile[regIdx].stackOffset);
+	if(virtualRegFile[regIdx].dirty == dirty) storeRegisterIntoStack(regIdx, virtualRegFile[regIdx].stackOffset); 
 	virtualRegFile[regIdx].dirty = clean; virtualRegFile[regIdx].stackOffset = 0; // free
 }
 forceinline void flushRegisters(){
@@ -249,10 +249,11 @@ forceinline void flushRegisters(){
 
 forceinline uint8_t getEmptyRegister(const uint32_t stackOffset, const uint16_t priority, const uint8_t checkStack){
 	uint16_t lowestPriority = UINT16_MAX, fIdx = 0;
+	uint8_t foundEmpty = 0;
 	for (uint8_t r = 0; r < maxGPRegs; r++) {
-		if(virtualRegFile[r].dirty == empty){fIdx = r; goto skipFlush1;}
-		if (virtualRegFile[r].stackOffset == stackOffset && checkStack) return r; 
-		if (virtualRegFile[r].priority < lowestPriority && virtualRegFile[r].dirty != locked) lowestPriority = virtualRegFile[r].priority; fIdx = r;
+		if (virtualRegFile[r].stackOffset == stackOffset && checkStack) goto skipFlush1; 
+		if (virtualRegFile[r].dirty == empty && !foundEmpty){fIdx = r; foundEmpty = 1;}
+		if (virtualRegFile[r].priority <= lowestPriority && virtualRegFile[r].dirty != locked && !foundEmpty){lowestPriority = virtualRegFile[r].priority; fIdx = r;}
 	}
 	flushRegister(fIdx);
 	skipFlush1:;
@@ -264,10 +265,11 @@ forceinline uint8_t getEmptyRegister(const uint32_t stackOffset, const uint16_t 
 #define noCheck 0
 
 uint8_t moveOffsetToRegs(const uint32_t stackOffsetLoad, const uint32_t stackOffsetStore, const uint16_t priority) {
-	uint8_t lowestPriority = UINT32_MAX, fIdx = 0;
+	uint16_t lowestPriority = UINT16_MAX, fIdx = 0; uint8_t foundEmpty = 0;
 	for (uint8_t r = 0; r < maxGPRegs; r++) {
-		if (virtualRegFile[r].stackOffset == stackOffsetLoad || virtualRegFile[r].dirty == empty){fIdx = r; goto skipFlush;}
-		if (virtualRegFile[r].priority < lowestPriority && virtualRegFile[r].dirty != locked) lowestPriority = virtualRegFile[r].priority; fIdx = r;
+		if (virtualRegFile[r].stackOffset == stackOffsetLoad && stackOffsetLoad != UINT32_MAX){fIdx = r; goto skipFlush;}
+		if (virtualRegFile[r].dirty == empty && !foundEmpty){fIdx = r; foundEmpty = 1;}
+		if (virtualRegFile[r].priority <= lowestPriority && virtualRegFile[r].dirty != locked && !foundEmpty){lowestPriority = virtualRegFile[r].priority; fIdx = r;}
 	}
 	flushRegister(fIdx);
 	loadRegisterFromStack(fIdx, stackOffsetLoad);
@@ -468,6 +470,7 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 const uint8_t operatorPrecedence[] = { 3, 3, 4, 4, 1, 7, 7, 2, 2, 2, 5, 5, 6, 5, 5, 6, 8 };
 
 void assembleSource(){
+	initializeVirtualRegs();
 	operator operatorStack[maxOperatorDepth]; uint8_t operatorIdx = 0;
 	operand operandStack[maxOperands]; uint8_t operandIdx = 0;
 	uint8_t registerPermanence = 0;
