@@ -183,10 +183,8 @@ typedef struct {
 #define maxGPRegs 12
 registerData virtualRegFile[maxGPRegs]; // 10 data registers
 
-void initializeVirtualRegs() {
-	for (uint8_t idx = 0; idx < maxGPRegs; idx++) {
-		virtualRegFile[idx] = (registerData){UINT16_MAX, empty, UINT16_MAX};
-	}
+forceinline void initializeVirtualRegs(){
+	for(uint8_t idx = 0; idx < maxGPRegs; idx++) virtualRegFile[idx] = (registerData){UINT32_MAX, empty, UINT16_MAX/2};
 }
 
 void storeConstantInReg(const uint8_t reg, const uint32_t c) {
@@ -250,46 +248,54 @@ forceinline void flushRegisters(){
 }
 
 forceinline uint8_t getEmptyRegister(const uint32_t stackOffset, const uint16_t priority, const uint8_t checkStack){
-	uint16_t lowestPriority = UINT16_MAX, fIdx = 0;
-	uint8_t foundEmpty = 0;
-	for (uint8_t r = 0; r < maxGPRegs; r++) {
-		if (virtualRegFile[r].stackOffset == stackOffset && checkStack) goto skipFlush1; 
-		if (virtualRegFile[r].dirty == empty && !foundEmpty){fIdx = r; foundEmpty = 1;}
-		if (virtualRegFile[r].priority <= lowestPriority && virtualRegFile[r].dirty != locked && !foundEmpty){lowestPriority = virtualRegFile[r].priority; fIdx = r;}
+	uint16_t lowestPriority = UINT16_MAX, flushIdx = 0; uint8_t foundEmpty = 0;
+	for(uint8_t r = 0; r < maxGPRegs; r++){
+		if(virtualRegFile[r].stackOffset == stackOffset && checkStack){flushIdx = r; goto skipEmptyFlush;}
+		if(virtualRegFile[r].dirty == empty){flushIdx = r; foundEmpty = 1;}
+		else if(virtualRegFile[r].priority < lowestPriority && virtualRegFile[r].dirty != locked && !foundEmpty){lowestPriority = virtualRegFile[r].priority; flushIdx = r;}
 	}
-	flushRegister(fIdx);
-	skipFlush1:;
-	virtualRegFile[fIdx] = (registerData){ stackOffset, clean, priority };
-	return fIdx;
+	flushRegister(flushIdx); skipEmptyFlush:
+	virtualRegFile[flushIdx] = (registerData){stackOffset, clean, priority};
+	return flushIdx;
 }
 
 #define checkIfInRegs 1
 #define noCheck 0
 
-uint8_t moveOffsetToRegs(const uint32_t stackOffsetLoad, const uint32_t stackOffsetStore, const uint16_t priority) {
-	uint16_t lowestPriority = UINT16_MAX, fIdx = 0; uint8_t foundEmpty = 0;
-	for (uint8_t r = 0; r < maxGPRegs; r++) {
-		if (virtualRegFile[r].stackOffset == stackOffsetLoad && stackOffsetLoad != UINT32_MAX){fIdx = r; goto skipFlush;}
-		if (virtualRegFile[r].dirty == empty && !foundEmpty){fIdx = r; foundEmpty = 1;}
-		if (virtualRegFile[r].priority <= lowestPriority && virtualRegFile[r].dirty != locked && !foundEmpty){lowestPriority = virtualRegFile[r].priority; fIdx = r;}
+uint8_t moveOffsetToRegs(const uint32_t stackOffsetLoad, const uint32_t stackOffsetStore, const uint16_t priority){
+	uint16_t lowestPriority = UINT16_MAX; uint8_t foundEmpty = 0;
+	uint8_t flushIdx = 0; uint8_t foundLoaded = 0;
+	for(uint8_t r = 0; r < maxGPRegs; r++){
+		if(virtualRegFile[r].stackOffset == stackOffsetLoad){foundLoaded = 1; flushIdx = r;} 
+		else if(virtualRegFile[r].stackOffset == stackOffsetStore) virtualRegFile[r].dirty = empty;
+		else if(virtualRegFile[r].dirty == empty){foundEmpty = 1; flushIdx = r;}
+		else if(virtualRegFile[r].priority < lowestPriority && virtualRegFile[r].dirty != locked && !foundEmpty && !foundLoaded){lowestPriority = virtualRegFile[r].priority; flushIdx = r;}
 	}
-	flushRegister(fIdx);
-	loadRegisterFromStack(fIdx, stackOffsetLoad);
-	skipFlush:;
-	virtualRegFile[fIdx] = (registerData){ stackOffsetStore, clean, priority };
-	return fIdx;
+	if(!foundLoaded){
+		if(!foundEmpty) flushRegister(flushIdx);
+		loadRegisterFromStack(flushIdx, stackOffsetLoad);
+	}
+	virtualRegFile[flushIdx] = (registerData){stackOffsetStore, clean, priority};
+	return flushIdx;
 }
 
 uint8_t moveConstantToRegs(const uint32_t val, const uint32_t stackOffsetStore, const uint16_t priority) {
-	const uint8_t fIdx = getEmptyRegister(stackOffsetStore, priority, noCheck);
+	const uint8_t fIdx = getEmptyRegister(stackOffsetStore, priority, checkIfInRegs);
 	storeConstantInReg(fIdx, val);
 	return fIdx;
 }
 
 uint8_t moveOffsetToRegsFromRegister(const uint8_t loadRegister, const uint32_t stackOffsetStore, const uint16_t priority){
-	const uint8_t fIdx = getEmptyRegister(stackOffsetStore, priority, noCheck);
-	emitOpcode(ldrw_reg_32); emitArgument(stackPointerReg, 4); emitArgument(fIdx, 4); emitArgument(loadRegister, 4);
-	return fIdx;
+	uint16_t lowestPriority = UINT16_MAX; uint8_t foundEmpty = 0; uint8_t flushIdx = 0;
+	for(uint8_t r = 0; r < maxGPRegs; r++){
+		if(virtualRegFile[r].stackOffset == stackOffsetStore) virtualRegFile[r].dirty = empty;
+		else if(virtualRegFile[r].dirty == empty){foundEmpty = 1; flushIdx = r;}
+		else if(virtualRegFile[r].priority < lowestPriority && virtualRegFile[r].dirty != locked && !foundEmpty){lowestPriority = virtualRegFile[r].priority; flushIdx = r;}
+	}
+	if(!foundEmpty) flushRegister(flushIdx);
+	loadRegisterFromStackR(flushIdx, loadRegister);
+	virtualRegFile[flushIdx] = (registerData){stackOffsetStore, clean, priority};
+	return flushIdx;
 }
 
 //#############################################################################################################################################
@@ -359,17 +365,17 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 	switch(op.subtype){
 		case opEqual:{
 		o2 = *operands; o1 = *(operands - 1);
-		uint32_t num32BitTransfers = ((o1.size < o2.size ? o1.size : o2.size) + 3) >> 2;
-		do{
-			num32BitTransfers--;
+		uint32_t num32BitTransfers = ((o1.size < o2.size ? o1.size : o2.size) + 3) >> 2; uint32_t o1s = (o1.size + 3) >> 2;
+		for(uint32_t wIdx = 0; wIdx < o1s; wIdx++){
+			if(wIdx >= num32BitTransfers) {virtualRegFile[moveConstantToRegs(0, o1.val.stackOffset + wIdx * 4, registerPermanence)]; continue;}
 			switch(o2.operandType){
 				case constant:
-				virtualRegFile[moveConstantToRegs(o2.val.value, o1.val.stackOffset + num32BitTransfers * 4, registerPermanence)].dirty = dirty;
+				virtualRegFile[moveConstantToRegs(o2.val.value, o1.val.stackOffset + wIdx * 4, registerPermanence)].dirty = dirty;
 				break;
 				default:
-				virtualRegFile[moveOffsetToRegs(o2.val.stackOffset + num32BitTransfers * 4, o1.val.stackOffset + num32BitTransfers * 4, registerPermanence)].dirty = dirty;
+				virtualRegFile[moveOffsetToRegs(o2.val.stackOffset + wIdx * 4, o1.val.stackOffset + wIdx * 4, registerPermanence)].dirty = dirty;
 			}
-		}while(num32BitTransfers > 0);
+		}
 		return o1;
 		}
 		case opReference:{
@@ -527,7 +533,7 @@ void assembleSource(){
 			case identifierToken:
 			if(allocationSz > 0){
 				const variableMetadata v = addVariable(curToken.str, curToken.len, allocationSz * 4);
-				operandStack[operandIdx++] = (operand){v.stackOffset, allocationSz, stackVar, registerPermanence};
+				operandStack[operandIdx++] = (operand){v.stackOffset, allocationSz * 4, stackVar, registerPermanence};
 				allocationSz = 0;
 				
 			}
