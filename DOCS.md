@@ -74,7 +74,7 @@ Arithmetic is optimized for 32-bit variables, as bigger vars must be written thr
 * Addition works with any sizes
 * USE 32 BIT VALUES FOR ARITHMETIC! Using larger values will result in unneeded load/store pairs.
 
-**Condition Evaluation**
+## Condition Evaluation
 
 ### Comparisons(greater, less, equals)
 
