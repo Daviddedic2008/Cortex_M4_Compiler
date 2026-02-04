@@ -279,7 +279,7 @@ forceinline void flushRegisters(){
 forceinline uint8_t getEmptyRegister(const uint32_t stackOffset, const uint16_t priority, const uint8_t checkStack){
 	uint16_t lowestPriority = UINT16_MAX, flushIdx = 0; uint8_t foundEmpty = 0;
 	for(uint8_t r = 0; r < maxGPRegs; r++){
-		if(virtualRegFile[r].stackOffset == stackOffset && checkStack){flushIdx = r; goto skipEmptyFlush;}
+		if(virtualRegFile[r].stackOffset == stackOffset && checkStack && virtualRegFile[r].dirty != empty){flushIdx = r; goto skipEmptyFlush;}
 		if(virtualRegFile[r].dirty == empty){flushIdx = r; foundEmpty = 1;}
 		else if(virtualRegFile[r].priority < lowestPriority && virtualRegFile[r].dirty != locked && !foundEmpty){lowestPriority = virtualRegFile[r].priority; flushIdx = r;}
 	}
@@ -295,7 +295,7 @@ uint8_t moveOffsetToRegs(const uint32_t stackOffsetLoad, const uint32_t stackOff
 	uint16_t lowestPriority = UINT16_MAX; uint8_t foundEmpty = 0;
 	uint8_t flushIdx = 0; uint8_t foundLoaded = 0;
 	for(uint8_t r = 0; r < maxGPRegs; r++){
-		if(virtualRegFile[r].stackOffset == stackOffsetLoad && stackOffsetLoad != UINT32_MAX){foundLoaded = 1; flushIdx = r;} 
+		if(virtualRegFile[r].stackOffset == stackOffsetLoad && stackOffsetLoad != UINT32_MAX && virtualRegFile[r].dirty != empty){foundLoaded = 1; flushIdx = r;} 
 		else if(virtualRegFile[r].stackOffset == stackOffsetStore) virtualRegFile[r].dirty = empty;
 		else if(virtualRegFile[r].dirty == empty){foundEmpty = 1; flushIdx = r;}
 		else if(virtualRegFile[r].priority < lowestPriority && virtualRegFile[r].dirty != locked && !foundEmpty && !foundLoaded){lowestPriority = virtualRegFile[r].priority; flushIdx = r;}

@@ -2,7 +2,7 @@
 #include "compiler.h"
 
 int main(){
-	setSource("word 1 x = 1; word 1 y = 2; word 1 z = y equals x;");
+	setSource("word 1 x = 1; x = x + 5; word 1 y = x + 4;");
 	assembleSource();
 	return 0;
 }
