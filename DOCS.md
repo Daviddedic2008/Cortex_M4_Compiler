@@ -76,14 +76,14 @@ Arithmetic is optimized for 32-bit variables, as bigger vars must be written thr
 
 **Condition Evaluation**
 
-### Comparisons(>, <, ==)
+### Comparisons(greater, less, equals)
 
 Comparisons first "live" in flags, only being transferred to registers if another comparison is called.
 
 ```rust
 word 1 x = 0; // declare x
-x = x + (x == 0); // uses ITE(If-Then-Else) opcode to conditionally add 1 or nothing.
+x = x + (x equals 0); // uses ITE(If-Then-Else) opcode to conditionally add 1 or nothing.
 word 1 y = 5;
-y = (y == 0) + (x == 0); // only 1 can be stored in flags at a time. y == 0 result is loaded into registers.
+y = (y equals 0) + (x equals 0); // only 1 can be stored in flags at a time. y == 0 result is loaded into registers.
 
 ```
