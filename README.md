@@ -13,9 +13,12 @@ A lightweight C-based compiler targeting the ARM Cortex-M4 architecture. This pr
 ## Project Files
 * `main.c`
 * `compiler.c` : Main file
+* `src.m4` : Source code file (can be opened with the custom UDL).
+* `m4UDL.xml` : My language's UDL file for use in notepad++.
 * `CMakeLists.txt`: Build system configuration.
-* `bld.bat`: Standard build and run script.
+* `bld.bat`: Standard build script.
 * `remake.bat`: Clean and cache refresh script.
+* `compile.bat` : Command to compile a text file.
 
 ## Usage
 

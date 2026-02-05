@@ -42,8 +42,8 @@ enum clampSubtype {
 };
 
 enum keywordSubtype {
-	ifKey, forKey, whileKey,
-	breakKey, continueKey, globalKey
+	ifKey, whileKey,
+	breakKey, continueKey, flushKey
 };
 
 typedef struct{
@@ -111,11 +111,11 @@ void nextToken(){
 		else{curToken.type = identifierToken; curToken.subtype = 0;} break;
 		case 'i': if(tokenCmpLiteral(curToken, "if")){curToken.type = keywordToken; curToken.subtype = ifKey;}
 		else{curToken.type = identifierToken; curToken.subtype = 0;} break;
-		case 'f': if(tokenCmpLiteral(curToken, "for")){curToken.type = keywordToken; curToken.subtype = forKey;}
-		else{curToken.type = identifierToken; curToken.subtype = 0;} break;
 		case 'c': if(tokenCmpLiteral(curToken, "continue")){curToken.type = keywordToken; curToken.subtype = continueKey;}
 		else{curToken.type = identifierToken; curToken.subtype = 0;} break;
 		case 'b': if(tokenCmpLiteral(curToken, "break")){curToken.type = keywordToken; curToken.subtype = breakKey;}
+		else{curToken.type = identifierToken; curToken.subtype = 0;} break;
+		case 'f': if(tokenCmpLiteral(curToken, "flush")){curToken.type = keywordToken; curToken.subtype = flushKey;}
 		else{curToken.type = identifierToken; curToken.subtype = 0;} break;
 		case 'w': if(tokenCmpLiteral(curToken, "while")){curToken.type = keywordToken; curToken.subtype = whileKey;}
 		else if(tokenCmpLiteral(curToken, "word")){curToken.type = sizeToken; curToken.subtype = 0;}
@@ -367,7 +367,7 @@ typedef struct operand {
 	}val;
 	uint32_t size;
 	// address 16 gp regs
-	uint8_t operandType; uint8_t flagType; uint16_t registerPreference;
+	uint8_t operandType; uint8_t flagType : 7; uint8_t forceFlush : 1; uint16_t registerPreference;
 }operand;
 #pragma pack(push, 1)
 typedef struct{uint8_t subtype, precedence;}operator;
@@ -420,20 +420,19 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 		uint32_t num32BitTransfers = ((o1.size < o2.size ? o1.size : o2.size) + 3) >> 2; const uint32_t o1s = (o1.size + 3) >> 2;
 		for(uint32_t wIdx = 0; wIdx < o1s; wIdx++){
 			if(wIdx >= num32BitTransfers) {const uint8_t r = moveConstantToRegs(0, o1.val.stackOffset + wIdx * 4, registerPermanence); virtualRegFile[r].dirty = dirty; continue;}
-			switch(o2.operandType){
+			uint8_t r; switch(o2.operandType){
 				case constant:
-				virtualRegFile[moveConstantToRegs(o2.val.value, o1.val.stackOffset + wIdx * 4, UINT16_MAX)].dirty = dirty;
+				virtualRegFile[r = moveConstantToRegs(o2.val.value, o1.val.stackOffset + wIdx * 4, UINT16_MAX)].dirty = dirty;
 				break;
 				case stackVar:
-				virtualRegFile[moveOffsetToRegs(o2.val.stackOffset + wIdx * 4, o1.val.stackOffset + wIdx * 4, UINT16_MAX)].dirty = dirty;
+				virtualRegFile[r = moveOffsetToRegs(o2.val.stackOffset + wIdx * 4, o1.val.stackOffset + wIdx * 4, UINT16_MAX)].dirty = dirty;
 				break;
 				case flagVar:
-				virtualRegFile[moveFlagToRegs(o2.val.stackOffset + wIdx * 4, o1.val.stackOffset + wIdx * 4, o2.flagType, registerPermanence)].dirty = dirty;
-				for(uint8_t r = 0; r < maxGPRegs; r++)
+				virtualRegFile[r = moveFlagToRegs(o2.val.stackOffset + wIdx * 4, o1.val.stackOffset + wIdx * 4, o2.flagType, registerPermanence)].dirty = dirty;
 				o1.operandType = flagVar; o1.flagType = o2.flagType;
 			}
+			if(o1.forceFlush) storeRegisterIntoStack(r, o1.val.stackOffset + wIdx * 4);
 		}
-		//for(uint8_t r = 0; r <maxGPRegs;r++)printf("%d %d\n", virtualRegFile[r].stackOffset, virtualRegFile[r].dirty);
 		return o1;
 		}
 		case opReference:{
@@ -442,7 +441,7 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 		for(uint8_t r = 0; r < maxGPRegs; r++){
 			if(virtualRegFile[r].stackOffset >= o1.val.stackOffset && virtualRegFile[r].stackOffset < o1.val.stackOffset + o1.size) flushRegister(r);
 		}
-		return (operand){o1.val.stackOffset, 4, constant, UINT16_MAX};
+		return (operand){o1.val.stackOffset, 4, constant, 0, 0, UINT16_MAX};
 		}
 		case opDereference:{
 		o2 = *operands; o1 = *(operands - 1);
@@ -459,7 +458,7 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 			
 		}while(num32BitTransfers > 0);
 		curCompilerTempSz += 4; curStackOffset += 4;
-		return (operand){curStackOffset - 4, o1.val.value, stackVar, registerPermanence};
+		return (operand){curStackOffset - 4, o1.val.value, stackVar, 0, 0, registerPermanence};
 		}
 		case opWriteback:{
 		// 1 deref 100 = 0;
@@ -497,7 +496,7 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 		}
 		curCompilerTempSz += num32BitTransfers * 4; curStackOffset += num32BitTransfers * 4;
 		virtualRegFile[tempReg].dirty = empty;
-		return (operand){curStackOffset - num32BitTransfers * 4, o1.val.value, stackVar, UINT16_MAX};
+		return (operand){curStackOffset - num32BitTransfers * 4, o1.val.value, stackVar, 0, 0, UINT16_MAX};
 		}
 		case opSub: case opAdd:{
 		o2 = *operands, o1 = *(operands - 1);
@@ -517,7 +516,7 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 			int8_t r2 = -1;
 			switch(o2.operandType){
 				case constant:
-				if(constantInAdd > 0) return (operand) {o1.val.value + op.subtype == opAdd ? o2.val.value : -o2.val.value, 4, constant, registerPermanence};
+				if(constantInAdd > 0) return (operand) {o1.val.value + op.subtype == opAdd ? o2.val.value : -o2.val.value, 4, constant, 0, 0, registerPermanence};
 				constantInAdd = wIdx ? 0 : o2.val.value;
 				if(o2.val.value >= UINT16_MAX) r2 = moveConstantToRegs(o2.val.value, curStackOffset - curCompilerTempSz + 1, UINT16_MAX);
 				break;
@@ -540,7 +539,7 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 			emitArgument(resultReg, 4); emitArgument(r1, 4); emitArgument(r2 == -1 ? constantInAdd : r2, r2 == -1 ? 12 : 4);
 		}
 		curStackOffset += num32BitAdds * 4; curCompilerTempSz += num32BitAdds * 4;
-		return (operand){curStackOffset - num32BitAdds * 4, num32BitAdds * 4, stackVar, registerPermanence};
+		return (operand){curStackOffset - num32BitAdds * 4, num32BitAdds * 4, stackVar, 0, 0, registerPermanence};
 		break;
 		}
 		case opCmpEqual:{
@@ -598,7 +597,7 @@ void assembleSource(){
 	operator operatorStack[maxOperatorDepth]; uint8_t operatorIdx = 0;
 	operand operandStack[maxOperands]; uint8_t operandIdx = 0;
 	uint8_t registerPermanence = 0;
-	uint32_t allocationSz = 0; uint8_t allocationFound = 0;
+	uint32_t allocationSz = 0; uint8_t allocationFound = 0, flushFound = 0;
 	uint8_t precedence = 0;
 	curToken.type = opToken;
 	while(curToken.type != nullToken){
@@ -611,22 +610,30 @@ void assembleSource(){
 				literal += curToken.str[digit] - '0';
 			}
 			if(allocationFound){allocationFound = 0; allocationSz = literal; break;}
-			operandStack[operandIdx++] = (operand){literal, 4, constant, 0, registerPermanence};
+			operandStack[operandIdx++] = (operand){literal, 4, constant, 0, 0, registerPermanence};
 			break;
 			case sizeToken:
 			allocationFound = 1;
 			break;
+			case keywordToken:
+			switch(curToken.subtype){
+				case flushKey:
+				flushFound = 1;
+				break;
+			}
+			break;
 			case identifierToken:
 			if(allocationSz > 0){
 				const variableMetadata v = addVariable(curToken.str, curToken.len, allocationSz * 4);
-				operandStack[operandIdx++] = (operand){v.stackOffset, allocationSz * 4, stackVar, registerPermanence};
+				operandStack[operandIdx++] = (operand){v.stackOffset, allocationSz * 4, stackVar, 0, flushFound, registerPermanence};
 				allocationSz = 0;
 				
 			}
 			else{
 				const variableMetadata v = retrieveLocalVariable(curToken.str, curToken.len);
-				operandStack[operandIdx++] = (operand){v.stackOffset, v.size, stackVar, registerPermanence};
+				operandStack[operandIdx++] = (operand){v.stackOffset, v.size, stackVar, 0, flushFound, registerPermanence};
 			}
+			flushFound = 0;
 			break;
 			case opToken:
 			if(operatorIdx > 0){ if(operatorStack[operatorIdx - 1].subtype == opDereference && curToken.subtype == opEqual){
