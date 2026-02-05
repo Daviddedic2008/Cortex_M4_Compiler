@@ -76,6 +76,7 @@ void setSource(const char* c){src = c;}
 
 void nextToken(){
 	while(*src == ' ' || *src == '\n')src++;
+	if(*src == '#') do{src++;}while(*src != '#');
 	curToken = (token){(void*)0, 0, nullToken, 0}; if(*src == '\0')return;
 	curToken.str = src; curToken.len = 0;
 	if(isSingle(*src)){src++; curToken.len++;}
@@ -533,7 +534,6 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 			virtualRegFile[r1].dirty = empty; else virtualRegFile[r1].dirty = r1d;
 			if(r2 != -1){ if(virtualRegFile[r2].stackOffset + wIdx * 4 >= curStackOffset - curCompilerTempSz && virtualRegFile[r2].stackOffset + wIdx * 4 < curStackOffset)
 			virtualRegFile[r2].dirty = empty; else virtualRegFile[r2].dirty = r1d;}
-			else if(constantInAdd == 0){virtualRegFile[r1].stackOffset = curStackOffset + wIdx * 4; continue;}
 			const uint8_t resultReg = getEmptyRegister(curStackOffset + wIdx * 4, registerPermanence, noCheck); virtualRegFile[resultReg].dirty = dirty;
 			if(r2 == -1) emitOpcode(op.subtype == opAdd ? addw_imm_32 : subw_imm_32); else emitOpcode(op.subtype == opAdd ? addw_reg_32 : subw_reg_32);
 			emitModifier(wIdx == 0);
