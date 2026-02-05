@@ -8,15 +8,14 @@ set YELLOW=!ESC![93m
 set BLUE=!ESC![96m
 set RESET=!ESC![0m
 
+set "inputFile=%~1"
+
 echo %YELLOW%--- Compiling ---%RESET%
 cmake --build --preset x64-debug
 
 if %errorlevel% equ 0 (
     echo.
     echo %GREEN%[SUCCESS] Build finished successfully.%RESET%
-    echo %YELLOW%--- Running ---%RESET%
-    echo.
-    build\CortexM4Compiler.exe
 ) else (
     echo.
     echo %RED%[ERROR] Build failed. Check the errors above.%RESET%

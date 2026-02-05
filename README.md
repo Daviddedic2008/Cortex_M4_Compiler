@@ -20,6 +20,11 @@ A lightweight C-based compiler targeting the ARM Cortex-M4 architecture. This pr
 ## Usage
 
 ### Build and Run
-To compile the project and execute the compiler in one step:
+To compile the compiler on Windows (with GCC in path)
 ```cmd
 bld
+```
+
+To compile a source file
+```cmd
+compile %sourcePath%
