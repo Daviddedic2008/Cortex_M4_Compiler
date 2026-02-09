@@ -16,8 +16,15 @@ if exist "build\CortexM4Compiler.exe" (
     echo %YELLOW%--- Running ---%RESET%
     echo.
     build\CortexM4Compiler.exe %inputFile%
+	if %errorlevel% equ 0 (
+		echo %blue%--- Compiled ---%RESET%
+	) else (
+    echo.
+    echo %RED%[ERROR] Compilation failed. Check errors above.%RESET%
+    pause
+	)
 ) else (
     echo.
-    echo %RED%[ERROR] Build failed. Check the errors above.%RESET%
+    echo %RED%[ERROR] Compiler binary not found. %RESET%
     pause
 )

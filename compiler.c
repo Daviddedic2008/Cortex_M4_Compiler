@@ -20,6 +20,7 @@
 
 #define UINT32_MAX 0xFFFFFFFF
 #define UINT16_MAX 0xFFFF
+#define UINT8_MAX 0xFF
 
 //#############################################################################################################################################
 // TOKENIZER
@@ -31,9 +32,8 @@ enum tokenType {
 
 enum opSubtype {
 	opAdd, opSub, opMul, opDiv, opEqual, opReference, opWriteback,
-	opDereference, opCmpGreater, opCmpLess, opCmpEqual,
-	opBitwiseOr, opBitwiseAnd, opBitwiseNot, opLogicalAnd,
-	opLogicalOr, opLogicalNot
+	opDereference, opBitwiseOr, opBitwiseAnd, opBitwiseNot, opBitwiseXor, opLogicalAnd,
+	opLogicalOr, opLogicalNot, opCmpGreater, opCmpLess, opCmpEqual
 };
 
 enum clampSubtype {
@@ -50,6 +50,8 @@ typedef struct{
 	char* str; uint16_t len;
 	uint8_t type, subtype;
 }token;
+
+#define isNullChar(c) (c == ' ' || c == '\n' || c == '\t')
 
 const char ops[] = { '+', '-', '*', '%', '=', '/', '\\', '>', '<', '&', '|', 'T'};
 const char singleTokens[] = { '(', ')', '{', '}', ';', 'T'};
@@ -75,12 +77,12 @@ char* src; token curToken;
 void setSource(const char* c){src = c;}
 
 void nextToken(){
-	while(*src == ' ' || *src == '\n')src++;
+	while(isNullChar(*src))src++;
 	if(*src == '#') do{src++;}while(*src != '#');
 	curToken = (token){(void*)0, 0, nullToken, 0}; if(*src == '\0')return;
 	curToken.str = src; curToken.len = 0;
 	if(isSingle(*src)){src++; curToken.len++;}
-	else{while(*src != ' ' && !isSingle(*src) && *src != '\n'){src++; curToken.len++;}}
+	else{while(!isNullChar(*src) && !isSingle(*src)){src++; curToken.len++;}}
 	switch(*(curToken.str)){
 		case '+': curToken.type = opToken; curToken.subtype = opAdd;break;
 		case '-': curToken.type = opToken; curToken.subtype = opSub;break;
@@ -139,7 +141,9 @@ typedef enum opcode {
 	ldrw_imm_32, strw_imm_32, ldrw_reg_32, strw_reg_32,
 	subw_imm_32, addw_imm_32, subw_reg_32, addw_reg_32,
 	mulw_reg_32, divw_reg_32, ite_32, it_32,
-	cmp_reg_32, cmp_imm_32, eors_reg_32, eors_imm_32, orrs_reg_32
+	cmp_reg_32, cmp_imm_32, 
+	eors_reg_32, eors_imm_32, orrs_reg_32, andw_imm_32, andw_reg_32, orrs_imm_32,
+	mvn_imm_32, mvn_reg_32
 }opcode;
 
 enum ArmCond{
@@ -154,23 +158,28 @@ enum armFlags{
 
 void emitOpcode(const uint8_t code) {
 	switch (code) {
-	case mov_reg_reg_32: printf("MOV_REG_REG_32");    break;
-	case movs:           printf("MOVS");         break;
-	case movw_lit_32:    printf("MOVW_LIT_32");         break;
-	case movt_lit_32:    printf("MOVT_LIT_32");         break;
-	case ldrw_imm_32:    printf("LDRW_IMM_32");    break;
-	case strw_imm_32:    printf("STRW_IMM_32");    break;
-	case ldrw_reg_32:    printf("LDRW_REG_32");    break;
-	case strw_reg_32:    printf("STRW_REG_32");    break;
-	case subw_imm_32:    printf("SUBW_IMM_32");   break;
-	case addw_imm_32:    printf("ADDW_IMM_32");   break;
-	case subw_reg_32:    printf("SUBW_REG_32");   break;
-	case addw_reg_32:    printf("ADDW_REG_32");   break;
-	case mulw_reg_32:    printf("MULW_REG_32");   break;
-	case divw_reg_32:    printf("DIVW_REG_32");   break;
+	case mov_reg_reg_32: printf("MOV_REG_REG_32"); break;
+	case movs:           printf("MOVS"); break;
+	case movw_lit_32:    printf("MOVW_LIT_32"); break;
+	case movt_lit_32:    printf("MOVT_LIT_32"); break;
+	case ldrw_imm_32:    printf("LDRW_IMM_32"); break;
+	case strw_imm_32:    printf("STRW_IMM_32"); break;
+	case ldrw_reg_32:    printf("LDRW_REG_32"); break;
+	case strw_reg_32:    printf("STRW_REG_32"); break;
+	case subw_imm_32:    printf("SUBW_IMM_32"); break;
+	case addw_imm_32:    printf("ADDW_IMM_32"); break;
+	case subw_reg_32:    printf("SUBW_REG_32"); break;
+	case addw_reg_32:    printf("ADDW_REG_32"); break;
+	case mulw_reg_32:    printf("MULW_REG_32"); break;
+	case divw_reg_32:    printf("DIVW_REG_32"); break;
 	case eors_imm_32:	 printf("EORS_IMM_32"); break;
 	case eors_reg_32:	 printf("EORS_REG_32"); break;
 	case orrs_reg_32:	 printf("ORRS_REG_32"); break;
+	case orrs_imm_32:	 printf("ORRS_IMM_32"); break;
+	case andw_imm_32: 	 printf("ANDW_IMM_32"); break;
+	case andw_reg_32: 	 printf("ANDW_REG_32"); break;
+	case cmp_imm_32: 	 printf("CMP_IMM_32"); break;
+	case cmp_reg_32: 	 printf("CMP_REG_32"); break;
 	case ite_32:		 printf("ITE_32"); break;
 	case it_32:		 	 printf("IT_32"); break;
 	default:             printf("UNKNOWN_OP");   break;
@@ -180,7 +189,11 @@ void emitOpcode(const uint8_t code) {
 }
 
 void emitFlag(const uint8_t flag) {
-	;
+	switch(flag){
+		case flag_gt: printf("FLAG GT\n"); break;
+		case flag_eq: printf("FLAG EQ\n"); break;
+		case flag_lt: printf("FLAG LT\n");
+	}
 }
 
 void emitModifier(const uint8_t mod){
@@ -411,6 +424,53 @@ variableMetadata retrieveLocalVariable(const char* name, uint8_t len){
 //#############################################################################################################################################
 // OPERATION PARSER/HEX EMITTER
 
+forceinline uint32_t evalImm(const uint32_t o1, const uint32_t o2, const uint8_t subtype){
+	switch(subtype){
+		case opAdd: return o1 + o2;
+		case opSub: return o1 - o2;
+		case opEqual: return o1 == o2;
+		case opBitwiseAnd: return o1 & o2;
+		case opBitwiseOr: return o1 | o2;
+		case opBitwiseXor: return o1 ^ o2;
+		case opCmpEqual: return o1 == o2;
+	}
+}
+
+forceinline uint8_t returnImmOpcode(const uint8_t subtype){
+	switch(subtype){
+		case opAdd: return addw_imm_32;
+		case opSub: return subw_imm_32;
+		case opMul: return mulw_reg_32;
+		case opBitwiseAnd: return andw_imm_32;
+		case opBitwiseOr: return orrs_imm_32;
+		case opBitwiseNot: return mvn_imm_32;
+	}
+} forceinline uint8_t returnRegOpcode(const uint8_t subtype){
+	switch(subtype){
+		case opAdd: return addw_reg_32;
+		case opSub: return subw_reg_32;
+		case opMul: return mulw_reg_32;
+		case opBitwiseAnd: return andw_reg_32;
+		case opBitwiseOr: return orrs_reg_32;
+		case opBitwiseNot: return mvn_reg_32;
+	}
+}
+
+forceinline uint8_t immSize(const uint8_t subtype){
+	switch(subtype){
+		case opBitwiseAnd: case opBitwiseXor: case opBitwiseOr: return 8;
+		case opAdd: case opSub: case opBitwiseNot: return 16;
+	}
+}
+
+forceinline uint8_t getFlag(const uint8_t subtype){
+	switch(subtype){
+		case opCmpEqual: return flag_eq;
+		case opCmpGreater: return flag_gt;
+		case opCmpLess: return flag_lt;
+	}
+}
+
 operand assembleOp(const operator op, const operand* operands, const uint16_t registerPermanence){
 	operand ret, o1, o2;
 	printf("\n");
@@ -431,7 +491,7 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 				virtualRegFile[r = moveFlagToRegs(o2.val.stackOffset + wIdx * 4, o1.val.stackOffset + wIdx * 4, o2.flagType, registerPermanence)].dirty = dirty;
 				o1.operandType = flagVar; o1.flagType = o2.flagType;
 			}
-			if(o1.forceFlush) storeRegisterIntoStack(r, o1.val.stackOffset + wIdx * 4);
+			if(o1.forceFlush){storeRegisterIntoStack(r, o1.val.stackOffset + wIdx * 4); virtualRegFile[r].dirty = empty;}
 		}
 		return o1;
 		}
@@ -498,7 +558,7 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 		virtualRegFile[tempReg].dirty = empty;
 		return (operand){curStackOffset - num32BitTransfers * 4, o1.val.value, stackVar, 0, 0, UINT16_MAX};
 		}
-		case opSub: case opAdd:{
+		case opSub: case opAdd: case opBitwiseNot: case opBitwiseAnd: case opBitwiseOr:{
 		o2 = *operands, o1 = *(operands - 1);
 		const uint32_t num32BitAdds = ((o1.size > o2.size ? o1.size : o2.size) + 3) >> 2;
 		for(uint32_t wIdx = 0; wIdx < num32BitAdds; wIdx++){
@@ -506,7 +566,7 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 			switch(o1.operandType){
 				case constant:
 				constantInAdd = wIdx ? 0 : o1.val.value;
-				if(o1.val.value >= UINT16_MAX) r1 = moveConstantToRegs(o1.val.value, curStackOffset - curCompilerTempSz + 1, UINT16_MAX);
+				if(o1.val.value >= 2 << immSize(op.subtype) && o2.operandType != constant && !wIdx) r1 = moveConstantToRegs(o1.val.value, curStackOffset - curCompilerTempSz + 1, UINT16_MAX);
 				break;
 				case stackVar:
 				r1 = moveOffsetToRegs(o1.val.stackOffset + wIdx * 4, o1.val.stackOffset + wIdx * 4, o1.registerPreference);
@@ -516,9 +576,9 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 			int8_t r2 = -1;
 			switch(o2.operandType){
 				case constant:
-				if(constantInAdd > 0) return (operand) {o1.val.value + op.subtype == opAdd ? o2.val.value : -o2.val.value, 4, constant, 0, 0, registerPermanence};
-				constantInAdd = wIdx ? 0 : o2.val.value;
-				if(o2.val.value >= UINT16_MAX) r2 = moveConstantToRegs(o2.val.value, curStackOffset - curCompilerTempSz + 1, UINT16_MAX);
+				if(constantInAdd > 0) return (operand) {evalImm(constantInAdd, o2.val.value, op.subtype), 4, constant, 0, 0, registerPermanence};
+				if(!wIdx){constantInAdd = o2.val.value; if(o2.val.value >= 2 << immSize(op.subtype)) r2 = moveConstantToRegs(o2.val.value, curStackOffset - curCompilerTempSz + 1, UINT16_MAX);}
+				else constantInAdd = 0;
 				break;
 				case stackVar:
 				if(r1 == -1){
@@ -532,54 +592,55 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 			if(virtualRegFile[r1].stackOffset + wIdx * 4 >= curStackOffset - curCompilerTempSz && virtualRegFile[r1].stackOffset + wIdx * 4 < curStackOffset)
 			virtualRegFile[r1].dirty = empty; else virtualRegFile[r1].dirty = r1d;
 			if(r2 != -1){ if(virtualRegFile[r2].stackOffset + wIdx * 4 >= curStackOffset - curCompilerTempSz && virtualRegFile[r2].stackOffset + wIdx * 4 < curStackOffset)
-			virtualRegFile[r2].dirty = empty; else virtualRegFile[r2].dirty = r1d;}
+			virtualRegFile[r2].dirty = empty; else virtualRegFile[r2].dirty = r2d;}
 			const uint8_t resultReg = getEmptyRegister(curStackOffset + wIdx * 4, registerPermanence, noCheck); virtualRegFile[resultReg].dirty = dirty;
-			if(r2 == -1) emitOpcode(op.subtype == opAdd ? addw_imm_32 : subw_imm_32); else emitOpcode(op.subtype == opAdd ? addw_reg_32 : subw_reg_32);
+			if(r2 == -1) emitOpcode(returnImmOpcode(op.subtype)); else emitOpcode(returnRegOpcode(op.subtype));
 			emitModifier(wIdx == 0);
-			emitArgument(resultReg, 4); emitArgument(r1, 4); emitArgument(r2 == -1 ? constantInAdd : r2, r2 == -1 ? 12 : 4);
+			emitArgument(resultReg, 4); emitArgument(r1, 4); emitArgument(r2 == -1 ? constantInAdd : r2, r2 == -1 ? immSize(op.subtype) : 4);
 		}
 		curStackOffset += num32BitAdds * 4; curCompilerTempSz += num32BitAdds * 4;
 		return (operand){curStackOffset - num32BitAdds * 4, num32BitAdds * 4, stackVar, 0, 0, registerPermanence};
-		break;
 		}
-		case opCmpEqual:{
-			o2 = *operands, o1 = *(operands - 1);
-			const uint32_t num32BitComparisons = ((o1.size > o2.size ? o1.size : o2.size) + 3) >> 2;
-			const uint8_t accumulationReg = getEmptyRegister(UINT32_MAX, UINT16_MAX, noCheck);
-			storeConstantInReg(accumulationReg, 0);
-			for(uint32_t wIdx = 0; wIdx < num32BitComparisons; wIdx++){
-				uint32_t constantInCmp = 0;
-				int8_t r1 = -1; const uint8_t o1Zero = o1.size <= wIdx * 4;
-				if(!o1Zero) switch(o1.operandType){
-					case constant: if(o1.val.value < 4096) constantInCmp = o1.val.value;
-					else r1 = moveConstantToRegs(o1.val.value, UINT32_MAX, UINT16_MAX);
-					break;
-					case stackVar:
-					r1 = moveOffsetToRegs(o1.val.stackOffset + wIdx * 4, o1.val.stackOffset + wIdx * 4, o1.registerPreference);
-				} if(r1 != -1) virtualRegFile[r1].dirty = locked;
-				int8_t r2 = -1; const uint8_t o2Zero = o2.size <= wIdx * 4;
-				if(!o2Zero) switch(o2.operandType){
-					case constant: if(o2.val.value < 4096) constantInCmp = o2.val.value;
-					else r2 = moveConstantToRegs(o2.val.value, UINT32_MAX, UINT16_MAX);
-					break;
-					case stackVar:
+		case opCmpEqual: case opCmpGreater: case opCmpLess:{
+		o2 = *operands, o1 = *(operands - 1);
+		if(o1.operandType == constant && o2.operandType == constant) return (operand) {4, 4, constant, 0, 0, registerPermanence};
+		const uint32_t num32BitCmps = ((o1.size > o2.size ? o1.size : o2.size) + 3) >> 2;
+		for(uint32_t wIdx = 0; wIdx < num32BitCmps; wIdx++){
+			int8_t r1 = -1; uint32_t constantInCmp = 0; uint8_t r1d, r2d;
+			switch(o1.operandType){
+				case constant:
+				if(o1.val.value >= UINT8_MAX) virtualRegFile[r1 = moveConstantToRegs(o1.val.value, curStackOffset - curCompilerTempSz + 1, UINT16_MAX), r1].dirty = locked;
+				else constantInCmp = o1.val.value; break;
+				case stackVar:
+				r1 = moveOffsetToRegs(o1.val.stackOffset + wIdx * 4, o1.val.stackOffset + wIdx * 4, o1.registerPreference);
+				r1d = virtualRegFile[r1].dirty;
+				break;
+			} if(r1 != -1) virtualRegFile[r1].dirty = locked;
+			int8_t r2 = -1;
+			switch(o2.operandType){
+				case constant:
+				if(!wIdx){constantInCmp = o2.val.value; if(o2.val.value >= UINT8_MAX) r2 = moveConstantToRegs(o2.val.value, curStackOffset - curCompilerTempSz + 1, UINT16_MAX);}
+				else constantInCmp = 0;
+				break;
+				case stackVar:
+				if(r1 == -1){
+					r1 = moveOffsetToRegs(o2.val.stackOffset + wIdx * 4, o2.val.stackOffset + wIdx * 4, o2.registerPreference);
+					virtualRegFile[r1].dirty = locked; r1d = virtualRegFile[r1].dirty;
+				} else {
 					r2 = moveOffsetToRegs(o2.val.stackOffset + wIdx * 4, o2.val.stackOffset + wIdx * 4, o2.registerPreference);
+					virtualRegFile[r2].dirty = locked; r2d = virtualRegFile[r2].dirty;
 				}
-				if(o1.val.stackOffset >= curStackOffset - curCompilerTempSz && r1 != -1 && o1.operandType != constant) virtualRegFile[r1].dirty = empty;
-				if(o2.val.stackOffset >= curStackOffset - curCompilerTempSz && r2 != -1 && o2.operandType != constant) virtualRegFile[r2].dirty = empty;
-				const uint8_t resultReg = getEmptyRegister(UINT32_MAX, UINT16_MAX, noCheck); virtualRegFile[resultReg].dirty = empty;
-				if(r1 != -1 && r2 != -1){emitOpcode(eors_reg_32); goto skpCmpImm;}
-				else if(r1 == -1 && r2 == -1) return (operand){o1.val.value == o2.val.value, 4, constant, registerPermanence};
-				emitOpcode(eors_imm_32); skpCmpImm:;
-				emitArgument(resultReg, 4); emitArgument(r1 != -1 ? r1 : r2, 4);
-				emitArgument(r2 == -1 ? (o1Zero || o2Zero ? 0 : constantInCmp) : r2, r2 == -1 ? 12 : 4);
-				emitOpcode(orrs_reg_32); emitArgument(accumulationReg, 4); emitArgument(resultReg, 4); emitArgument(accumulationReg, 4);
 			}
-			virtualFlags.dirty = dirty; virtualFlags.stackOffset = curStackOffset;
-			curStackOffset += 4; curCompilerTempSz += 4;
-			virtualRegFile[accumulationReg].dirty = empty;
-			return (operand){curStackOffset - 4, 4, flagVar, registerPermanence};
-			break;
+			if(virtualRegFile[r1].stackOffset + wIdx * 4 >= curStackOffset - curCompilerTempSz && virtualRegFile[r1].stackOffset + wIdx * 4 < curStackOffset)
+			virtualRegFile[r1].dirty = empty; else virtualRegFile[r1].dirty = r1d;
+			if(r2 != -1){ if(virtualRegFile[r2].stackOffset + wIdx * 4 >= curStackOffset - curCompilerTempSz && virtualRegFile[r2].stackOffset + wIdx * 4 < curStackOffset)
+			virtualRegFile[r2].dirty = empty; else virtualRegFile[r2].dirty = r2d;}
+			if(r2 == -1) emitOpcode(cmp_imm_32); else emitOpcode(cmp_reg_32); 
+			emitArgument(r1, 4); emitArgument(r2 == -1 ? constantInCmp : r2, r2 == -1 ? 12 : 4);
+			if(wIdx != num32BitCmps - 1){emitOpcode(it_32); emitFlag(getFlag(op.subtype));}
+		}
+		virtualFlags.stackOffset = curStackOffset; curStackOffset += 4; curCompilerTempSz += 4;
+		return (operand){curStackOffset - 4, 4, flagVar, 0, flag_eq, registerPermanence};
 		}
 	}
 }
@@ -590,7 +651,7 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 #define maxOperatorDepth 100
 #define maxOperands 200
 
-const uint8_t operatorPrecedence[] = { 3, 3, 4, 4, 1, 7, 7, 2, 2, 2, 5, 5, 6, 5, 5, 6, 8 };
+const uint8_t operatorPrecedence[] = { 3, 3, 4, 4, 1, 7, 7, 7, 3, 3, 3, 3, 2, 2, 2, 2, 2, 2};
 
 void assembleSource(){
 	initializeVirtualRegs();
@@ -644,7 +705,7 @@ void assembleSource(){
 				uint32_t prevPrecedence = operatorIdx > 0 ? operatorStack[operatorIdx-1].precedence : 0;
 				if(curPrecedence > prevPrecedence) break;
 				const operand tmp = assembleOp(operatorStack[--operatorIdx], operandStack + operandIdx - 1, registerPermanence);
-				operandIdx -= operatorStack[operatorIdx].subtype == opReference ? 1 : 2;
+				const uint8_t oIdx = operatorStack[operatorIdx].subtype; operandIdx -= (oIdx == opReference || oIdx == opLogicalNot) ? 1 : 2;
 				operandStack[operandIdx++] = tmp;
 			} operatorStack[operatorIdx++] = (operator){curToken.subtype, curPrecedence};
 			break;
