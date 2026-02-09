@@ -313,9 +313,9 @@ uint8_t moveOffsetToRegs(const uint32_t stackOffsetLoad, const uint32_t stackOff
 	uint16_t lowestPriority = UINT16_MAX; uint8_t foundEmpty = 0;
 	uint8_t flushIdx = 0; uint8_t foundLoaded = 0;
 	for(uint8_t r = 0; r < maxGPRegs; r++){
-		if(virtualRegFile[r].stackOffset == stackOffsetLoad && stackOffsetLoad != UINT32_MAX && virtualRegFile[r].dirty != empty){foundLoaded = 1; flushIdx = r;} 
+		if(virtualRegFile[r].stackOffset == stackOffsetLoad && virtualRegFile[r].dirty != empty){foundLoaded = 1; flushIdx = r;} 
 		else if(virtualRegFile[r].stackOffset == stackOffsetStore) virtualRegFile[r].dirty = empty;
-		else if(virtualRegFile[r].dirty == empty){foundEmpty = 1; flushIdx = r;}
+		else if(virtualRegFile[r].dirty == empty && !foundLoaded){foundEmpty = 1; flushIdx = r;}
 		else if(virtualRegFile[r].priority < lowestPriority && virtualRegFile[r].dirty != locked && !foundEmpty && !foundLoaded){lowestPriority = virtualRegFile[r].priority; flushIdx = r;}
 	}
 	if(!foundLoaded){
