@@ -538,7 +538,7 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 		case opWriteback:{
 		// 1 deref 100 = 0;
 		const operand o3 = *operands; o2 = *(operands - 1); o1 = *(operands - 2);
-		uint32_t num32BitTransfers = ((o1.val.value < o3.size ? o1.val.value : o3.size) + 3) >> 2;
+		uint32_t num32BitTransfers = o1.val.value;
 		#define nullRegister 100
 		uint8_t addrReg = nullRegister;
 		const uint8_t tempReg = getEmptyRegister(0, registerPermanence, noCheck);
@@ -553,12 +553,15 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 		}
 		uint32_t idx = 0;
 		while(1){
-			switch(o3.operandType){
-				case stackVar:
-				loadRegisterFromStack(tempReg, o3.val.stackOffset + idx * 4);
-				break;
-				case constant:
-				storeConstantInReg(tempReg, idx == 0 ? o3.val.value : 0);
+			if(idx >= (o3.size + 3) >> 2) storeConstantInReg(tempReg, 0);
+			else{
+				switch(o3.operandType){
+					case stackVar:
+					loadRegisterFromStack(tempReg, o3.val.stackOffset + idx * 4);
+					break;
+					case constant:
+					storeConstantInReg(tempReg, o3.val.value);
+				}
 			}
 			if(addrReg != nullRegister){	
 				storeRegisterIntoStackR(tempReg, addrReg);
