@@ -12,8 +12,9 @@ Variables are statically sized(not really typed). They can be sized to multiples
 
 ```rust
 // word [count] name = value;
-// [count] must be a constant
+// [count] must be a constant. It is optional. No [count] will default to size of one word
 word 1 variable;	// simply declares it, no assignment
+word var; // declares a 1 word variable
 word 1 x = 10;	// a single 32-bit integer and assigns 10 to it
 word 4 buffer = 0;	// reserves 16 bytes (4 words) on the stack and zeros the variable
 
