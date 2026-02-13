@@ -149,3 +149,23 @@ while 1{x = 5;} // no comparison, makes an infinite loop
 ```
 
 WHILE branches can be used to make infinite loops with no comparison penalty. They do not default to the 32-bit branching opcode, making them slightly more cache friendly than ifs :)
+
+---
+
+## Comments
+
+Comments are not c-style, I haven't made multi-char delimiters yet. 
+
+```rust
+// although i'm writing comments in traditional c-style in the code segments here:
+// the REAL language has no line comments, only block comments. The comment character is #.
+
+#[comment]#
+// comment can be anything
+
+if x equals 5{
+	# hey hey comment! #
+	x = 5;
+}
+
+```
