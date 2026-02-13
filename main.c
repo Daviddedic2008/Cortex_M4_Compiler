@@ -3,7 +3,6 @@
 #include "compiler.h"
 
 int main(int argc, char* argv[]){
-	//setSource("word 2 x = 5; word 2 y = 5; x = x + y; x = 5; x = x + 5;");
 	FILE* fptr = fopen(argv[1], "r");
 	fseek(fptr, 0, SEEK_END);
     long length = ftell(fptr);

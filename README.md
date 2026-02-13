@@ -31,3 +31,9 @@ bld
 To compile a source file
 ```cmd
 compile %sourcePath%
+```
+
+API used to compile a string
+```c
+void assembleSource(const char* sourceString, const uint32_t programOrigin)
+```
