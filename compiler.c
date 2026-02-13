@@ -148,7 +148,8 @@ typedef enum opcode {
 	mulw_reg_32, divw_reg_32, ite_32, it_32,
 	cmp_reg_32, cmp_imm_32, 
 	eors_reg_32, eors_imm_32, orrs_reg_32, andw_imm_32, andw_reg_32, orrs_imm_32,
-	mvn_imm_32, mvn_reg_32
+	mvn_imm_32, mvn_reg_32,
+	b_imm_16, bc_imm_16, b_imm_32, bc_imm_32
 }opcode;
 
 enum ArmCond{
@@ -170,9 +171,9 @@ void emitOpcode(const uint8_t code) {
 	case strw_imm_32:    printf("STRW_IMM_32"); break;
 	case ldrw_reg_32:    printf("LDRW_REG_32"); break;
 	case strw_reg_32:    printf("STRW_REG_32"); break;
-	case mov_lit_16:    printf("MOV_LIT_16"); break;
-	case str_imm_16:    printf("STR_IMM_16"); break;
-	case ldr_imm_16:    printf("LDR_IMM_16"); break;
+	case mov_lit_16:     printf("MOV_LIT_16"); break;
+	case str_imm_16:     printf("STR_IMM_16"); break;
+	case ldr_imm_16:     printf("LDR_IMM_16"); break;
 	case subw_imm_32:    printf("SUBW_IMM_32"); break;
 	case addw_imm_32:    printf("ADDW_IMM_32"); break;
 	case subw_reg_32:    printf("SUBW_REG_32"); break;
@@ -191,7 +192,11 @@ void emitOpcode(const uint8_t code) {
 	case cmp_reg_32: 	 printf("CMP_REG_32"); break;
 	case ite_32:		 printf("ITE_32"); break;
 	case it_32:		 	 printf("IT_32"); break;
-	default:             printf("UNKNOWN_OP");   break;
+	case b_imm_16:		 printf("B_IMM_16"); break;
+	case b_imm_32:		 printf("B_IMM_32"); break;
+	case bc_imm_16:		 printf("BC_IMM_16"); break;
+	case bc_imm_32:		 printf("BC_IMM_32"); break;
+	default:             printf("UNKNOWN_OP"); break;
 	}
 	printf("\n");
 	fflush(stdout);
@@ -492,6 +497,14 @@ forceinline uint8_t getFlag(const uint8_t subtype){
 	}
 }
 
+forceinline uint8_t getOppositeFlag(const uint8_t flag){
+	switch(flag){
+		case flag_eq: return flag_ne;
+		case flag_gt: return flag_lt;
+		case flag_lt: return flag_gt;
+	}
+}
+
 operand assembleOp(const operator op, const operand* operands, const uint16_t registerPermanence){
 	operand ret, o1, o2;
 	printf("\n");
@@ -603,10 +616,10 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 					virtualRegFile[r2].dirty = locked; r2d = virtualRegFile[r2].dirty;
 				}
 			}
-			if(virtualRegFile[r1].stackOffset + wIdx * 4 >= curStackOffset - curCompilerTempSz && virtualRegFile[r1].stackOffset + wIdx * 4 < curStackOffset)
+			if(virtualRegFile[r1].stackOffset >= curStackOffset - curCompilerTempSz && virtualRegFile[r1].stackOffset < curStackOffset)
 			virtualRegFile[r1].dirty = empty; else virtualRegFile[r1].dirty = r1d;
-			if(r2 != -1){ if(virtualRegFile[r2].stackOffset + wIdx * 4 >= curStackOffset - curCompilerTempSz && virtualRegFile[r2].stackOffset + wIdx * 4 < curStackOffset)
-			virtualRegFile[r2].dirty = empty; else virtualRegFile[r2].dirty = r2d;}
+			if(r2 != -1 && virtualRegFile[r2].stackOffset >= curStackOffset - curCompilerTempSz && virtualRegFile[r2].stackOffset < curStackOffset)
+			virtualRegFile[r2].dirty = empty; else virtualRegFile[r2].dirty = r2d;
 			const uint8_t resultReg = getEmptyRegister(curStackOffset + wIdx * 4, registerPermanence, noCheck); virtualRegFile[resultReg].dirty = dirty;
 			if(r2 == -1) emitOpcode(returnImmOpcode(op.subtype)); else emitOpcode(returnRegOpcode(op.subtype));
 			emitModifier(wIdx == 0);
@@ -647,15 +660,16 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 					virtualRegFile[r2].dirty = locked; r2d = virtualRegFile[r2].dirty;
 				}
 			}
-			if(virtualRegFile[r1].stackOffset + wIdx * 4 >= curStackOffset - curCompilerTempSz && virtualRegFile[r1].stackOffset + wIdx * 4 < curStackOffset)
+			if(virtualRegFile[r1].stackOffset >= curStackOffset - curCompilerTempSz && virtualRegFile[r1].stackOffset < curStackOffset)
 			virtualRegFile[r1].dirty = empty; else virtualRegFile[r1].dirty = r1d;
-			if(r2 != -1){ if(virtualRegFile[r2].stackOffset + wIdx * 4 >= curStackOffset - curCompilerTempSz && virtualRegFile[r2].stackOffset + wIdx * 4 < curStackOffset)
+			if(r2 != -1){ if(virtualRegFile[r2].stackOffset >= curStackOffset - curCompilerTempSz && virtualRegFile[r2].stackOffset < curStackOffset)
 			virtualRegFile[r2].dirty = empty; else virtualRegFile[r2].dirty = r2d;}
 			if(r2 == -1) emitOpcode(subs_imm_32); else emitOpcode(subs_reg_32); emitModifier(wIdx == 0); emitArgument(scratchReg1, 4);
 			emitArgument(r1, 4); emitArgument(r2 == -1 ? constantInCmp : r2, r2 == -1 ? 12 : 4);
 		}
+		virtualFlags.flagType = getFlag(op.subtype);
 		virtualFlags.stackOffset = curStackOffset; curStackOffset += 4; curCompilerTempSz += 4;
-		return (operand){curStackOffset - 4, 4, flagVar, 0, flag_eq, registerPermanence};
+		return (operand){curStackOffset - 4, 4, flagVar, 0, getFlag(op.subtype), registerPermanence};
 		}
 		case opLogicalAnd: case opLogicalOr:{
 			;
@@ -735,21 +749,12 @@ void assembleSource(){
 			switch(curToken.subtype){
 				case parenthesesL: case parenthesesR:
 				precedence += (curToken.subtype == parenthesesL) * 10 - (curToken.subtype == parenthesesR) * 10;
-				break;
-				case curlyBL:
-				switch(branchFound){
-					case ifKey:
-					// take last known operand. cleanse it from registers if its a temporary.
-					// switch based on its type. if constant, just skip or dont skip code in if. if flag, branch.
-					// if regs, compare w zero and set zero flag, use that to branch or not.
-					// save the memory location of this branch, as its empty. it will be filled in when right brace is found.
-				}
-				incrementScope(); registerPermanence += (branchFound == whileKey) * 128; break;
-				case curlyBR:
-				
+				break;	
+				case curlyBL: goto endLineG;
 			}
 			break;
 			case endLine:
+			endLineG:;
 			for(int8_t idx = operatorIdx - 1; idx >= 0; idx--){
 				const operand tmp = assembleOp(operatorStack[idx], operandStack + operandIdx - 1, registerPermanence);
 				operandIdx -= operatorStack[idx].subtype == opReference ? 1 : 2;
@@ -762,6 +767,38 @@ void assembleSource(){
 				}
 			}
 			curStackOffset -= curCompilerTempSz; curCompilerTempSz = 0;
+			if(curToken.subtype == curlyBL) switch(branchFound){
+				case ifKey:
+				const operand condition = operandStack[--operandIdx];
+				switch(condition.operandType){
+					case flagVar:
+					// nothing yet
+					break;
+					break;
+					case constant:
+					// if 1, continue. if 0, skip to }. MAKE SURE TO GOTO AND SKIP COND BRANCH
+					if(!condition.val.value){
+						uint8_t depth = 1;
+						while(depth){
+							nextToken();
+							if(curToken.type == clampToken) depth += (curToken.subtype == curlyBL) - (curToken.subtype == curlyBR);
+						}
+					}continue;
+					goto skpCondB;
+					case stackVar:
+					// move to regs, comparing each one to zero. honestly just call assembleOp
+					operandStack[operandIdx++] = condition; operandStack[operandIdx] = (operand){0, 4, constant, 0, 0, registerPermanence};
+					assembleOp((operator){opCmpEqual, 0}, operandStack + operandIdx, registerPermanence);
+				}
+				emitOpcode(bc_imm_32); emitFlag(getOppositeFlag(virtualFlags.flagType)); emitArgument(4096, 12);
+				skpCondB:;
+				// take last known operand. cleanse it from registers if its a temporary.
+				// switch based on its type. if constant, just skip or dont skip code in if. if flag, branch.
+				// if regs, compare w zero and set zero flag, use that to branch or not.
+				// save the memory location of this branch, as its empty. it will be filled in when right brace is found.
+				break;
+			}
+			incrementScope(); registerPermanence += (branchFound == whileKey) * 128; break;
 			break;
 		}
 	}
