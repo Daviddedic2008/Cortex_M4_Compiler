@@ -1,4 +1,3 @@
-void nextToken();
-void setSource(const char* c);
+#include <stdint.h>
 
-void assembleSource();
+void assembleSource(const char* src, const uint32_t progOrigin);

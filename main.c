@@ -11,8 +11,7 @@ int main(int argc, char* argv[]){
 	char *buffer = malloc(length + 1);
 	size_t readCount = fread(buffer, 1, length, fptr);
     buffer[readCount] = '\0';
-	setSource(buffer);
-	assembleSource();
+	assembleSource(buffer, 0);
 	fclose(fptr);
     free(buffer);
 	return 0;

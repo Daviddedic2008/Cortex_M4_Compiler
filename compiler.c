@@ -75,7 +75,7 @@ uint8_t tokenCmpLiteral(token s, const char* lit){
 }
 
 char* src; token curToken;
-void setSource(const char* c){src = c;}
+forceinline void setSource(const char* c){src = c;}
 
 void nextToken(){
 	while(isNullChar(*src))src++;
@@ -142,15 +142,16 @@ typedef enum specialRegs {
 typedef enum opcode {
 	movw_reg_reg_32, movw_lit_32, movt_lit_32, 
 	ldrw_imm_32, strw_imm_32, ldrw_reg_32, strw_reg_32,
-	mov_lit_16, ldr_imm_16, str_imm_16,
 	subw_imm_32, addw_imm_32, subw_reg_32, addw_reg_32,
 	subs_imm_32, subs_reg_32,
 	mulw_reg_32, divw_reg_32, ite_32, it_32,
 	cmp_reg_32, cmp_imm_32, 
 	eors_reg_32, eors_imm_32, orrs_reg_32, andw_imm_32, andw_reg_32, orrs_imm_32,
-	mvn_imm_32, mvn_reg_32,
-	b_imm_16, bc_imm_16, b_imm_32, bc_imm_32
+	mvn_imm_32, mvn_reg_32, b_imm_32, bc_imm_32,
+	b_imm_16, bc_imm_16, mov_lit_16, ldr_imm_16, str_imm_16
 }opcode;
+
+#define lim32 bc_imm_32
 
 enum ArmCond{
     cond_eq = 0x0, cond_ne = 0x1,
@@ -161,6 +162,8 @@ enum ArmCond{
 enum armFlags{
 	flag_eq, flag_ne, flag_lt, flag_gt
 };
+
+uint32_t progAddr;
 
 void emitOpcode(const uint8_t code) {
 	switch (code) {
@@ -197,7 +200,7 @@ void emitOpcode(const uint8_t code) {
 	case bc_imm_16:		 printf("BC_IMM_16"); break;
 	case bc_imm_32:		 printf("BC_IMM_32"); break;
 	default:             printf("UNKNOWN_OP"); break;
-	}
+	} progAddr += code > lim32 ? 2 : 4;
 	printf("\n");
 	fflush(stdout);
 }
@@ -682,13 +685,16 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 
 #define maxOperatorDepth 100
 #define maxOperands 200
+#define maxBranchDepth 10
 
 const uint8_t operatorPrecedence[] = { 3, 3, 4, 4, 1, 7, 7, 7, 3, 3, 3, 3, 2, 2, 2, 2, 2, 2};
 
-void assembleSource(){
-	initializeVirtualRegs();
+void assembleSource(const char* src, const uint32_t progOrigin){
+	initializeVirtualRegs(); curScope = 0;
+	progAddr = 0; setSource(src);
 	operator operatorStack[maxOperatorDepth]; uint8_t operatorIdx = 0;
 	operand operandStack[maxOperands]; uint8_t operandIdx = 0;
+	uint32_t relativeBranchOffsets[maxBranchDepth];
 	uint8_t registerPermanence = 0; uint32_t allocationSz = 0; uint8_t allocationFound = 0, flushFound = 0, volatileFound = 0;
 	int8_t branchFound = -1; uint32_t jmpBackAddr; uint8_t precedence = 0; virtualFlags.dirty = empty;
 	curToken.type = opToken;
@@ -713,6 +719,7 @@ void assembleSource(){
 				flushFound = 1;
 				break;
 				case ifKey: case whileKey:
+				relativeBranchOffsets[curScope] = progAddr;
 				branchFound = curToken.subtype; break;
 				case volatileKey: volatileFound = 1; break;
 			}
@@ -751,6 +758,12 @@ void assembleSource(){
 				precedence += (curToken.subtype == parenthesesL) * 10 - (curToken.subtype == parenthesesR) * 10;
 				break;	
 				case curlyBL: goto endLineG;
+				case curlyBR:
+				switch(branchFound){
+					case ifKey: printf("BACKPATCH %d\n", progAddr); break;
+					case whileKey: emitOpcode(b_imm_32); emitArgument(relativeBranchOffsets[curScope - 1];
+				}
+				branchFound = -1;
 			}
 			break;
 			case endLine:
@@ -760,13 +773,6 @@ void assembleSource(){
 				operandIdx -= operatorStack[idx].subtype == opReference ? 1 : 2;
 				operandStack[operandIdx++] = tmp;
 			}
-			operatorIdx = 0;
-			for(uint8_t r = 0; r < maxGPRegs; r++){
-				if(virtualRegFile[r].stackOffset > curStackOffset - curCompilerTempSz && virtualRegFile[r].stackOffset < curStackOffset){
-					virtualRegFile[r].dirty = empty;
-				}
-			}
-			curStackOffset -= curCompilerTempSz; curCompilerTempSz = 0;
 			if(curToken.subtype == curlyBL) switch(branchFound){
 				case ifKey:
 				const operand condition = operandStack[--operandIdx];
@@ -796,9 +802,15 @@ void assembleSource(){
 				// switch based on its type. if constant, just skip or dont skip code in if. if flag, branch.
 				// if regs, compare w zero and set zero flag, use that to branch or not.
 				// save the memory location of this branch, as its empty. it will be filled in when right brace is found.
-				break;
+				incrementScope(); registerPermanence += (branchFound == whileKey) * 128;
 			}
-			incrementScope(); registerPermanence += (branchFound == whileKey) * 128; break;
+			operatorIdx = 0;
+			for(uint8_t r = 0; r < maxGPRegs; r++){
+				if(virtualRegFile[r].stackOffset > curStackOffset - curCompilerTempSz && virtualRegFile[r].stackOffset < curStackOffset){
+					virtualRegFile[r].dirty = empty;
+				}
+			}
+			curStackOffset -= curCompilerTempSz; curCompilerTempSz = 0;
 			break;
 		}
 	}
