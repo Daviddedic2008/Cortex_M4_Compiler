@@ -1,6 +1,6 @@
 # Language Documentation
 
-**Lightweight language made for 32 bit arithmetic and data structures **
+**Lightweight language made for 32 bit arithmetic and data structures**
 Single pass compiler, improved greedy register allocator, backpatching for jumps, constant folding, lazy register storage, lazy flag storage.
 
 ---
