@@ -112,6 +112,10 @@ void nextToken(){
 		else{curToken.type = identifierToken; curToken.subtype = 0;} break;
 		case 'e': if(tokenCmpLiteral(curToken, "equals")){curToken.type = opToken; curToken.subtype = opCmpEqual;}
 		else{curToken.type = identifierToken; curToken.subtype = 0;} break;
+		case 'g': if(tokenCmpLiteral(curToken, "greater")){curToken.type = opToken; curToken.subtype = opCmpGreater;}
+		else{curToken.type = identifierToken; curToken.subtype = 0;} break;
+		case 'l': if(tokenCmpLiteral(curToken, "less")){curToken.type = opToken; curToken.subtype = opCmpLess;}
+		else{curToken.type = identifierToken; curToken.subtype = 0;} break;
 		case 'i': if(tokenCmpLiteral(curToken, "if")){curToken.type = keywordToken; curToken.subtype = ifKey;}
 		else{curToken.type = identifierToken; curToken.subtype = 0;} break;
 		case 'c': if(tokenCmpLiteral(curToken, "continue")){curToken.type = keywordToken; curToken.subtype = continueKey;}
@@ -719,7 +723,6 @@ void assembleSource(const char* src, const uint32_t progOrigin){
 				flushFound = 1;
 				break;
 				case ifKey: case whileKey:
-				relativeBranchOffsets[curScope] = progAddr;
 				branchFound = curToken.subtype; break;
 				case volatileKey: volatileFound = 1; break;
 			}
@@ -760,10 +763,11 @@ void assembleSource(const char* src, const uint32_t progOrigin){
 				case curlyBL: goto endLineG;
 				case curlyBR:
 				switch(branchFound){
-					case ifKey: printf("BACKPATCH %d\n", progAddr); break;
-					case whileKey: emitOpcode(b_imm_32); emitArgument(relativeBranchOffsets[curScope - 1];
+					case ifKey: printf("BACKPATCH %d\n", progAddr - relativeBranchOffsets[curScope - 1]); break;
+					case whileKey: emitOpcode(b_imm_32); emitArgument(progAddr - relativeBranchOffsets[curScope - 1], 16);
 				}
 				branchFound = -1;
+				decrementScope(); for(uint8_t r = 0; r < maxGPRegs; r++) if(virtualRegFile[r].stackOffset >= curStackOffset) virtualRegFile[r].dirty = empty;
 			}
 			break;
 			case endLine:
@@ -802,7 +806,7 @@ void assembleSource(const char* src, const uint32_t progOrigin){
 				// switch based on its type. if constant, just skip or dont skip code in if. if flag, branch.
 				// if regs, compare w zero and set zero flag, use that to branch or not.
 				// save the memory location of this branch, as its empty. it will be filled in when right brace is found.
-				incrementScope(); registerPermanence += (branchFound == whileKey) * 128;
+				relativeBranchOffsets[curScope] = progAddr; incrementScope(); registerPermanence += (branchFound == whileKey) * 128;
 			}
 			operatorIdx = 0;
 			for(uint8_t r = 0; r < maxGPRegs; r++){
