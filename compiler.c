@@ -512,6 +512,16 @@ forceinline uint8_t getOppositeFlag(const uint8_t flag){
 	}
 }
 
+forceinline uint8_t numOperands(const uint8_t subtype){
+	switch(subtype){
+		case opWriteback: return 3;
+		case opLogicalNot: return 1;
+		case opBitwiseNot: return 1;
+		case opReference: return 1;
+		default: return 2;
+	}
+}
+
 operand assembleOp(const operator op, const operand* operands, const uint16_t registerPermanence){
 	operand ret, o1, o2;
 	printf("\n");
@@ -520,7 +530,7 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 		o2 = *operands; o1 = *(operands - 1);
 		uint32_t num32BitTransfers = ((o1.size < o2.size ? o1.size : o2.size) + 3) >> 2; const uint32_t o1s = (o1.size + 3) >> 2;
 		for(uint32_t wIdx = 0; wIdx < o1s; wIdx++){
-			if(wIdx >= num32BitTransfers) {const uint8_t r = moveConstantToRegs(0, o1.val.stackOffset + wIdx * 4, registerPermanence); virtualRegFile[r].dirty = dirty; continue;}
+			if(wIdx >= num32BitTransfers) {const uint8_t r = moveConstantToRegs(0, o1.val.stackOffset + wIdx * 4, registerPermanence); virtualRegFile[r].dirty = dirty; goto skipWriteback;}
 			uint8_t r; switch(o2.operandType){
 				case constant:
 				virtualRegFile[r = moveConstantToRegs(o2.val.value, o1.val.stackOffset + wIdx * 4, UINT16_MAX)].dirty = dirty;
@@ -531,7 +541,7 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 				case flagVar:
 				virtualRegFile[r = moveFlagToRegs(o2.val.stackOffset + wIdx * 4, o1.val.stackOffset + wIdx * 4, o2.flagType, registerPermanence)].dirty = dirty;
 				o1.operandType = flagVar; o1.flagType = o2.flagType;
-			}
+			}skipWriteback:;
 			if(o1.forceFlush){storeRegisterIntoStack(r, o1.val.stackOffset + wIdx * 4); virtualRegFile[r].dirty = empty;}
 		}
 		return o1;
@@ -610,7 +620,7 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 			int8_t r2 = -1;
 			switch(o2.operandType){
 				case constant:
-				if(constantInAdd > 0) return (operand) {evalImm(constantInAdd, o2.val.value, op.subtype), 4, constant, 0, 0, registerPermanence};
+				if(constantInAdd >= 0) {return (operand) {evalImm(constantInAdd, o2.val.value, op.subtype), 4, constant, 0, 0, registerPermanence};}
 				if(!wIdx){constantInAdd = o2.val.value; if(o2.val.value >= 2 << immSize(op.subtype)) r2 = moveConstantToRegs(o2.val.value, curStackOffset - curCompilerTempSz + 1, UINT16_MAX);}
 				else constantInAdd = 0;
 				break;
@@ -742,14 +752,11 @@ void assembleSource(const char* src, const uint32_t progOrigin){
 			flushFound = 0;
 			break;
 			case opToken:
-			if(operatorIdx > 0) if(operatorStack[operatorIdx - 1].subtype == opDereference && curToken.subtype == opEqual){
-				operatorStack[operatorIdx - 1].subtype = opWriteback; break;
-			}
 			const uint32_t curPrecedence = operatorPrecedence[curToken.subtype] + precedence;
 			if(volatileFound && curToken.subtype == opDereference) curToken.subtype = opDereferenceVolatile;
 			while(1){
 				uint32_t prevPrecedence = operatorIdx > 0 ? operatorStack[operatorIdx-1].precedence : 0;
-				if(curPrecedence > prevPrecedence) break;
+				if(curPrecedence > prevPrecedence || operatorIdx == 1) break;
 				const operand tmp = assembleOp(operatorStack[--operatorIdx], operandStack + operandIdx - 1, registerPermanence);
 				const uint8_t oIdx = operatorStack[operatorIdx].subtype; operandIdx -= (oIdx == opReference || oIdx == opLogicalNot) ? 1 : 2;
 				operandStack[operandIdx++] = tmp;
@@ -773,8 +780,9 @@ void assembleSource(const char* src, const uint32_t progOrigin){
 			case endLine:
 			endLineG:;
 			for(int8_t idx = operatorIdx - 1; idx >= 0; idx--){
+				if(operatorStack[idx].subtype == opEqual && idx > 0 && operatorStack[idx - 1].subtype == opDereference){operatorStack[--idx].subtype = opWriteback;}
 				const operand tmp = assembleOp(operatorStack[idx], operandStack + operandIdx - 1, registerPermanence);
-				operandIdx -= operatorStack[idx].subtype == opReference ? 1 : 2;
+				operandIdx -= numOperands(operatorStack[idx].subtype);
 				operandStack[operandIdx++] = tmp;
 			}
 			if(curToken.subtype == curlyBL) switch(branchFound){

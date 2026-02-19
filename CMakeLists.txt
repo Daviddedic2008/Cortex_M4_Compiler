@@ -14,5 +14,7 @@ add_executable(CortexM4Compiler
     main.c 
 	compiler.c
 )
-
+target_compile_options(${PROJECT_NAME} PRIVATE -O2)
+target_link_options(${PROJECT_NAME} PRIVATE -s)
+target_link_options(${PROJECT_NAME} PRIVATE -Wl,--stack,32768)
 target_compile_options(CortexM4Compiler PRIVATE -w)
