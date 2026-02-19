@@ -33,7 +33,7 @@ enum tokenType {
 enum opSubtype {
 	opAdd, opSub, opMul, opDiv, opEqual, opReference, opWriteback,
 	opDereference, opBitwiseOr, opBitwiseAnd, opBitwiseNot, opBitwiseXor, opLogicalAnd,
-	opLogicalOr, opLogicalNot, opCmpGreater, opCmpLess, opCmpEqual,
+	opLogicalOr, opLogicalNot, opCmpGreater, opCmpLess, opCmpEqual, opCmpGEqual, opCmpNEqual, opCmpLEqual,
 	opDereferenceVolatile, opWritebackVolatile
 };
 
@@ -164,7 +164,7 @@ enum ArmCond{
 };
 
 enum armFlags{
-	flag_eq, flag_ne, flag_lt, flag_gt
+	flag_eq, flag_ne, flag_lt, flag_gt, flag_ge, flag_le
 };
 
 uint32_t progAddr;
@@ -212,8 +212,10 @@ void emitOpcode(const uint8_t code) {
 void emitFlag(const uint8_t flag) {
 	switch(flag){
 		case flag_gt: printf("FLAG GT\n"); break;
+		case flag_ge: printf("FLAG GE\n"); break;
 		case flag_eq: printf("FLAG EQ\n"); break;
 		case flag_ne: printf("FLAG NE\n"); break;
+		case flag_le: printf("FLAG LE\n"); break;
 		case flag_lt: printf("FLAG LT\n");
 	}
 }
@@ -426,7 +428,7 @@ uint32_t curCompilerTempSz = 0;
 
 variableMetadata addVariable(const char* name, const uint8_t strLen, const uint32_t size){
 	variableBuffer[variableIdx] = (variableMetadata){curStackOffset, size, name, strLen, curScope}; 
-	curStackOffset += size; curStackOffset = (curStackOffset + 3) & ~3;
+	curStackOffset += size;
 	return variableBuffer[variableIdx++];
 }
 
@@ -501,23 +503,26 @@ forceinline uint8_t getFlag(const uint8_t subtype){
 		case opCmpEqual: return flag_eq;
 		case opCmpGreater: return flag_gt;
 		case opCmpLess: return flag_lt;
+		case opCmpGEqual: return flag_ge;
+		case opCmpLEqual: return flag_le;
+		case opCmpNEqual: return flag_ne;
 	}
 }
 
 forceinline uint8_t getOppositeFlag(const uint8_t flag){
 	switch(flag){
 		case flag_eq: return flag_ne;
-		case flag_gt: return flag_lt;
-		case flag_lt: return flag_gt;
+		case flag_gt: return flag_le;
+		case flag_lt: return flag_ge;
+		case flag_ge: return flag_lt;
+		case flag_le: return flag_gt;
 	}
 }
 
 forceinline uint8_t numOperands(const uint8_t subtype){
 	switch(subtype){
 		case opWriteback: return 3;
-		case opLogicalNot: return 1;
-		case opBitwiseNot: return 1;
-		case opReference: return 1;
+		case opLogicalNot: case opBitwiseNot: case opReference: return 1;
 		default: return 2;
 	}
 }
@@ -548,7 +553,7 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 		}
 		case opReference:{
 		o1 = *operands;
-		curCompilerTempSz += 4;
+		curCompilerTempSz += 4; curStackOffset += 4;
 		return (operand){o1.val.stackOffset, 4, constant, 0, 0, UINT16_MAX};
 		}
 		case opDereferenceVolatile: case opDereference:{
@@ -600,6 +605,7 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 		for(uint8_t r = 0; r < maxGPRegs; r++){
 			if(virtualRegFile[r].stackOffset == o2.val.value || o2.operandType == stackVar) virtualRegFile[r].dirty = empty;
 		}
+		curStackOffset += o1.val.value * 4; curCompilerTempSz += o1.val.value * 4;
 		return (operand){curStackOffset - o1.val.value * 4, o1.val.value * 4, stackVar, 0, 0, UINT16_MAX};
 		}
 		case opSub: case opAdd: case opBitwiseAnd: case opBitwiseOr:{
@@ -645,7 +651,7 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 		curStackOffset += num32BitAdds * 4; curCompilerTempSz += num32BitAdds * 4;
 		return (operand){curStackOffset - num32BitAdds * 4, num32BitAdds * 4, stackVar, 0, 0, registerPermanence};
 		}
-		case opCmpEqual: case opCmpGreater: case opCmpLess:{
+		case opCmpEqual: case opCmpGreater: case opCmpLess: case opCmpGEqual: case opCmpLEqual: case opCmpNEqual:{
 		o2 = *operands, o1 = *(operands - 1);
 		flushFlags();
 		virtualFlags.flagType = op.subtype; virtualFlags.dirty = dirty;
@@ -758,7 +764,7 @@ void assembleSource(const char* src, const uint32_t progOrigin){
 				uint32_t prevPrecedence = operatorIdx > 0 ? operatorStack[operatorIdx-1].precedence : 0;
 				if(curPrecedence > prevPrecedence || operatorIdx == 1) break;
 				const operand tmp = assembleOp(operatorStack[--operatorIdx], operandStack + operandIdx - 1, registerPermanence);
-				const uint8_t oIdx = operatorStack[operatorIdx].subtype; operandIdx -= (oIdx == opReference || oIdx == opLogicalNot) ? 1 : 2;
+				const uint8_t oIdx = operatorStack[operatorIdx].subtype; operandIdx -= numOperands(oIdx);
 				operandStack[operandIdx++] = tmp;
 			} operatorStack[operatorIdx++] = (operator){curToken.subtype, curPrecedence};
 			break;
@@ -770,9 +776,10 @@ void assembleSource(const char* src, const uint32_t progOrigin){
 				case curlyBL: goto endLineG;
 				case curlyBR:
 				switch(branchFound){
-					case ifKey: printf("BACKPATCH %d\n", progAddr - relativeBranchOffsets[curScope - 1]); break;
-					case whileKey: emitOpcode(b_imm_32); emitArgument(progAddr - relativeBranchOffsets[curScope - 1], 16);
+					case ifKey: break;
+					case whileKey: emitOpcode(b_imm_32); emitArgument(relativeBranchOffsets[curScope - 1] - progAddr, 16);
 				}
+				printf("BACKPATCH %d\n", progAddr - relativeBranchOffsets[curScope - 1]); 
 				branchFound = -1;
 				decrementScope(); for(uint8_t r = 0; r < maxGPRegs; r++) if(virtualRegFile[r].stackOffset >= curStackOffset) virtualRegFile[r].dirty = empty;
 			}
@@ -780,12 +787,22 @@ void assembleSource(const char* src, const uint32_t progOrigin){
 			case endLine:
 			endLineG:;
 			for(int8_t idx = operatorIdx - 1; idx >= 0; idx--){
-				if(operatorStack[idx].subtype == opEqual && idx > 0 && operatorStack[idx - 1].subtype == opDereference){operatorStack[--idx].subtype = opWriteback;}
+				if(idx > 0){
+					if(operatorStack[idx].subtype == opEqual && operatorStack[idx-1].subtype == opDereference) operatorStack[--idx].subtype = opWriteback;
+					else if(operatorStack[idx].subtype == opCmpEqual){
+						switch(operatorStack[idx-1].subtype){
+							case opLogicalNot: operatorStack[--idx].subtype = opCmpNEqual; break;
+							case opCmpGreater: operatorStack[--idx].subtype = opCmpGEqual; break;
+							case opCmpLess: operatorStack[--idx].subtype = opCmpLEqual; break;
+						}
+					}
+				}
 				const operand tmp = assembleOp(operatorStack[idx], operandStack + operandIdx - 1, registerPermanence);
 				operandIdx -= numOperands(operatorStack[idx].subtype);
 				operandStack[operandIdx++] = tmp;
 			}
 			if(curToken.subtype == curlyBL) switch(branchFound){
+				case whileKey: relativeBranchOffsets[curScope] = progAddr;
 				case ifKey:
 				const operand condition = operandStack[--operandIdx];
 				switch(condition.operandType){
@@ -808,13 +825,15 @@ void assembleSource(const char* src, const uint32_t progOrigin){
 					operandStack[operandIdx++] = condition; operandStack[operandIdx] = (operand){0, 4, constant, 0, 0, registerPermanence};
 					assembleOp((operator){opCmpEqual, 0}, operandStack + operandIdx, registerPermanence);
 				}
+				if(branchFound == ifKey) relativeBranchOffsets[curScope] = progAddr;
+				incrementScope(); registerPermanence += (branchFound == whileKey) * 128;
 				emitOpcode(bc_imm_32); emitFlag(getOppositeFlag(virtualFlags.flagType)); emitArgument(4096, 12);
 				skpCondB:;
 				// take last known operand. cleanse it from registers if its a temporary.
 				// switch based on its type. if constant, just skip or dont skip code in if. if flag, branch.
 				// if regs, compare w zero and set zero flag, use that to branch or not.
 				// save the memory location of this branch, as its empty. it will be filled in when right brace is found.
-				relativeBranchOffsets[curScope] = progAddr; incrementScope(); registerPermanence += (branchFound == whileKey) * 128;
+				
 			}
 			operatorIdx = 0;
 			for(uint8_t r = 0; r < maxGPRegs; r++){

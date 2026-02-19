@@ -2,7 +2,9 @@
 
 **Lightweight language made for 32 bit arithmetic and data structures**
 
-Single pass compiler, improved greedy register allocator, backpatching for jumps, constant folding, lazy register storage, lazy flag storage.
+Single pass compiler, greedy register allocator(that spills based on loop depth and recent use), backpatching for jumps, constant folding, lazy register storage, lazy flag storage.
+This compiler is machine-dependent and relies on a standard "word" size, which is 32 bits for the Cortex M4. This is done to force the programmer to optimize properly.
+Memory footprint is small, with the binary being <128KB and the overall RAM usage(accounting for stack too) being sub-50KB.
 
 ---
 
@@ -102,7 +104,7 @@ Arithmetic is optimized for 32-bit variables, as bigger vars must be written thr
 
 ### Comparisons
 
-Available comparisons: GREATER, EQUALS, LESS
+Available comparisons: GREATER, EQUALS, LESS, NOT EQUALS, GREATER EQUALS, LESS EQUALS
 
 Comparisons first "live" in flags, only being transferred to registers if another comparison is called.
 
@@ -110,6 +112,7 @@ Comparisons first "live" in flags, only being transferred to registers if anothe
 word 1 x = 0; // declare x
 x = x + (x equals 0); // uses ITE(If-Then-Else) opcode to conditionally add 1 or nothing.
 word 1 y = 5;
+word z = y greater equals 7; // one comparison, doesnt actually do two.
 y = (y equals 0) + (x equals 0); // only 1 can be stored in flags at a time. y == 0 result is loaded into registers.
 
 ```
@@ -162,11 +165,11 @@ Comments are not c-style, I haven't made multi-char delimiters yet.
 // although i'm writing comments in traditional c-style in the code segments here:
 // the REAL language has no line comments, only block comments. The comment character is #.
 
-#[comment]#
+# [comment] #
 // comment can be anything
 
 if x equals 5{
-	# hey hey comment! #
+	# hey hey comment! x+5. This wont execute. #
 	x = 5;
 }
 
