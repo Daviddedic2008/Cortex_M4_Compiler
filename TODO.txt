@@ -1,0 +1,13 @@
+-- TODO --
+
+* [being worked on]
+~ [done]
+
+* add register file snapshot storing/restoring before and after conditionals(if/else, while)
+* make it so equal opcode always writes to new register instead of just returning old regs
+	e.g. x = y, have it copy value of y from one reg to another. dont just lazily return the regs y is already in.
+	to remedy the performance hit possibly add aliases for people who wanna have multiple variable names for one
+* make sure backpatching uses proper bit packing
+* add increment and decrement ops, of type += and -=. These should write back to old registers instead of always finding new ones.
+* add logical and, or, not
+* add bitwise not
