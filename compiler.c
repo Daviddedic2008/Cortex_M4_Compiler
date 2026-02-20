@@ -152,7 +152,7 @@ typedef enum opcode {
 	cmp_reg_32, cmp_imm_32, 
 	eors_reg_32, eors_imm_32, orrs_reg_32, andw_imm_32, andw_reg_32, orrs_imm_32,
 	mvn_imm_32, mvn_reg_32, b_imm_32, bc_imm_32,
-	b_imm_16, bc_imm_16, mov_lit_16, ldr_imm_16, str_imm_16
+	b_imm_16, bc_imm_16, mov_lit_16, ldr_imm_16, str_imm_16, mov_reg_reg_16
 }opcode;
 
 #define lim32 bc_imm_32
@@ -199,10 +199,11 @@ void emitOpcode(const uint8_t code) {
 	case cmp_reg_32: 	 printf("CMP_REG_32"); break;
 	case ite_32:		 printf("ITE_32"); break;
 	case it_32:		 	 printf("IT_32"); break;
-	case b_imm_16:		 printf("B_IMM_16"); break;
 	case b_imm_32:		 printf("B_IMM_32"); break;
-	case bc_imm_16:		 printf("BC_IMM_16"); break;
 	case bc_imm_32:		 printf("BC_IMM_32"); break;
+	case bc_imm_16:		 printf("BC_IMM_16"); break;
+	case mov_reg_reg_16: printf("MOV_REG_REG_16"); break;
+	case b_imm_16:		 printf("B_IMM_16"); break;
 	default:             printf("UNKNOWN_OP"); break;
 	} progAddr += code > lim32 ? 2 : 4;
 	printf("\n");
@@ -316,6 +317,9 @@ forceinline void loadRegisterFromStackRAbs(const uint8_t reg, const uint8_t reg2
 }
 forceinline void loadRegisterFromFlags(const uint8_t reg, const uint8_t flag){
 	emitOpcode(ite_32); emitFlag(flag); storeConstantInReg(reg, 1); storeConstantInReg(reg, 0);
+}
+forceinline void loadRegisterFromRegs(const uint8_t r1, const uint8_t r2){
+	emitOpcode(mov_reg_reg_16); emitArgument(r1, 4); emitArgument(r2, 4);
 }
 void flushRegister(uint8_t regIdx) {
 	if(virtualRegFile[regIdx].dirty == locked) return;
@@ -709,12 +713,34 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 
 const uint8_t operatorPrecedence[] = { 3, 3, 4, 4, 1, 7, 7, 7, 3, 3, 3, 3, 2, 2, 2, 2, 2, 2};
 
+typedef struct{
+	uint32_t registerStatus[maxGPRegs];
+}registerSnapshot;
+
+forceinline registerSnapshot getSnapshot(){
+	registerSnapshot ret;
+	#pragma unroll
+	for(uint8_t r = 0; r < maxGPRegs; r++){
+		ret.registerStatus[r] = virtualRegFile[r].dirty == empty ? UINT32_MAX : virtualRegFile[r].stackOffset;
+	} return ret;
+}
+forceinline void restoreSnapshot(const registerSnapshot snapshot){
+	for(uint8_t r = 0; r < maxGPRegs; r++){
+		if(snapshot.registerStatus[r] != UINT32_MAX){
+			for(uint8_t r2 = 0; r2 < maxGPRegs; r2++) if(virtualRegFile[r2].stackOffset == snapshot.registerStatus[r] && virtualRegFile[r2].dirty != empty){
+				if(r2 != r){flushRegister(r); loadRegisterFromRegs(r, r2); virtualRegFile[r].dirty = clean; virtualRegFile[r2].dirty = empty;} goto continueLoop; 
+			}
+			flushRegister(r); loadRegisterFromStack(r, snapshot.registerStatus[r]); virtualRegFile[r].dirty = clean;
+		}
+		continueLoop:;
+	}
+}
+
+registerSnapshot snapshotStack[maxBranchDepth]; uint32_t relativeBranchOffsets[maxBranchDepth];
+operator operatorStack[maxOperatorDepth]; operand operandStack[maxOperands];
 void assembleSource(const char* src, const uint32_t progOrigin){
 	initializeVirtualRegs(); curScope = 0;
-	progAddr = 0; setSource(src);
-	operator operatorStack[maxOperatorDepth]; uint8_t operatorIdx = 0;
-	operand operandStack[maxOperands]; uint8_t operandIdx = 0;
-	uint32_t relativeBranchOffsets[maxBranchDepth];
+	progAddr = 0; setSource(src); uint8_t operatorIdx = 0; uint8_t operandIdx = 0;
 	uint8_t registerPermanence = 0; uint32_t allocationSz = 0; uint8_t allocationFound = 0, flushFound = 0, volatileFound = 0;
 	int8_t branchFound = -1; uint32_t jmpBackAddr; uint8_t precedence = 0; virtualFlags.dirty = empty;
 	curToken.type = opToken;
@@ -775,13 +801,15 @@ void assembleSource(const char* src, const uint32_t progOrigin){
 				break;	
 				case curlyBL: goto endLineG;
 				case curlyBR:
+				decrementScope(); 
 				switch(branchFound){
 					case ifKey: break;
-					case whileKey: emitOpcode(b_imm_32); emitArgument(relativeBranchOffsets[curScope - 1] - progAddr, 16);
+					case whileKey: emitOpcode(b_imm_32); emitArgument(relativeBranchOffsets[curScope] - progAddr, 16);
 				}
-				printf("BACKPATCH %d\n", progAddr - relativeBranchOffsets[curScope - 1]); 
+				restoreSnapshot(snapshotStack[curScope]);
+				printf("BACKPATCH %d\n", progAddr - relativeBranchOffsets[curScope]); 
 				branchFound = -1;
-				decrementScope(); for(uint8_t r = 0; r < maxGPRegs; r++) if(virtualRegFile[r].stackOffset >= curStackOffset) virtualRegFile[r].dirty = empty;
+				for(uint8_t r = 0; r < maxGPRegs; r++) if(virtualRegFile[r].stackOffset >= curStackOffset) virtualRegFile[r].dirty = empty;
 			}
 			break;
 			case endLine:
@@ -801,7 +829,8 @@ void assembleSource(const char* src, const uint32_t progOrigin){
 				operandIdx -= numOperands(operatorStack[idx].subtype);
 				operandStack[operandIdx++] = tmp;
 			}
-			if(curToken.subtype == curlyBL) switch(branchFound){
+			if(curToken.subtype == curlyBL){ 
+				switch(branchFound){
 				case whileKey: relativeBranchOffsets[curScope] = progAddr;
 				case ifKey:
 				const operand condition = operandStack[--operandIdx];
@@ -826,7 +855,7 @@ void assembleSource(const char* src, const uint32_t progOrigin){
 					assembleOp((operator){opCmpEqual, 0}, operandStack + operandIdx, registerPermanence);
 				}
 				if(branchFound == ifKey) relativeBranchOffsets[curScope] = progAddr;
-				incrementScope(); registerPermanence += (branchFound == whileKey) * 128;
+				registerPermanence += (branchFound == whileKey) * 128;
 				emitOpcode(bc_imm_32); emitFlag(getOppositeFlag(virtualFlags.flagType)); emitArgument(4096, 12);
 				skpCondB:;
 				// take last known operand. cleanse it from registers if its a temporary.
@@ -834,6 +863,7 @@ void assembleSource(const char* src, const uint32_t progOrigin){
 				// if regs, compare w zero and set zero flag, use that to branch or not.
 				// save the memory location of this branch, as its empty. it will be filled in when right brace is found.
 				
+				}snapshotStack[curScope] = getSnapshot(); incrementScope();
 			}
 			operatorIdx = 0;
 			for(uint8_t r = 0; r < maxGPRegs; r++){

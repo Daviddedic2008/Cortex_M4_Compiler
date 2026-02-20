@@ -174,3 +174,15 @@ if x equals 5{
 }
 
 ```
+
+## Arrays
+
+Arrays do not formally exist, but here every variable can be treated as a pseudo-array.
+
+```rust
+word 100 arr; // define array of 100 32-bit words
+
+1 deref (ref arr + 4) = 5; // write 5 to the 4th word in the array. This compiles to one move immediate and one store immediate.
+
+
+```

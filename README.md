@@ -24,6 +24,13 @@ A lightweight C-based compiler targeting the ARM Cortex-M4 architecture. This pr
 
 ### Build and Run
 To compile the compiler on Windows (with GCC in path)
+
+First navigate to the repository
+```cmd
+cd %pathToRepo%
+```
+
+Compile compiler :)
 ```cmd
 bld
 ```
@@ -31,6 +38,11 @@ bld
 To compile a source file
 ```cmd
 compile %sourcePath%
+```
+
+OR:
+```cmd
+%directoryOfCompilerExecutable%/CortexM4Compiler.exe %sourcePath%
 ```
 
 API used to compile a string
