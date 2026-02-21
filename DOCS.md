@@ -51,7 +51,7 @@ Pointers are simply 1 word variables. This compiler is made for 32 bit systems, 
 
 To get data stored at memory locations, use the DEREF operator. Pointer 'casting' is done at dereferencing, and therefore the operator takes a dereference size too. The size being dereferenced is static. you cannot dereference a dynamic amount of words.
 
-Dereferences can be specified as volatile to ensure reading from stack. Volatile and non-constant dereferences are a sync point where registers are flushed to stack. This allows for accurate control of GPIO regs, etc.
+Dereferences can be specified as volatile to ensure reading from stack. Volatile and non-constant(dereferencing a memory address not known at compile time) dereferences are a sync point where registers are flushed to stack. This allows for accurate control of GPIO regs, etc.
 
 ```rust
 // [size] deref [address];
@@ -78,13 +78,13 @@ word 1 x = 5; word 1 ref_x = ref x; // flush x to stack and grab reference
 
 ### REF
 
-To grab variable absolute addresses that persist across function calls, use the REF operator. Here, no 'casting' is done. When invoked, the compiler first flushes the variable being referenced from registers. Then, the compiler reads the variable's absolute memory offset into a register temporary that will persist.
+To grab variable absolute addresses, use the REF operator. Here, no 'casting' is done. When invoked, the operator and its one operand are folded into a single constant memory location for local offsets or are added to a copy of the stack pointer register for absolute offsets
 
 ```rust
 // ref [variable]
 // [variable] can be either a compiler temporary (e.g (5+3)) or a variable.
 word 1 x = 10; // x now lives in registers since its of size 1
-word 1 x_ptr = ref x; // x is flushed to stack and its stack offset + stack pointer is loaded into xptr
+word 1 x_ptr = ref x; // x's stack offset + stack pointer is loaded into xptr
 
 ```
 

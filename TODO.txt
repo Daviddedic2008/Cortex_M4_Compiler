@@ -3,7 +3,7 @@
 * [being worked on]
 
 
-* add register file snapshot storing/restoring before and after conditionals(if/else, while)
+* improve register snapshot system to ensure dirty bit tracking properly
 * add else, continue, break
 * make it so equal opcode always writes to new register instead of just returning old regs
 	e.g. x = y, have it copy value of y from one reg to another. dont just lazily return the regs y is already in.
@@ -22,3 +22,4 @@
 ~ [done]
 
 
+~ add register file snapshot storing/restoring before and after conditionals(if/else, while)
