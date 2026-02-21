@@ -109,6 +109,8 @@ Available comparisons: GREATER, EQUALS, LESS, NOT EQUALS, GREATER EQUALS, LESS E
 Comparisons first "live" in flags, only being transferred to registers if another comparison is called.
 
 ```rust
+// [o1] comparator [o2]
+// [o1] and [o2] can be constant or variables or expressions
 word 1 x = 0; // declare x
 x = x + (x equals 0); // uses ITE(If-Then-Else) opcode to conditionally add 1 or nothing.
 word 1 y = 5;
