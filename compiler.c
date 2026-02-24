@@ -703,19 +703,19 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 			switch(o1.operandType){
 				case flagVar: if(virtualFlags.stackOffset == o1.val.stackOffset){lazyFlag = o1.flagType; break;}
 				case stackVar: r1 = moveOffsetToRegs(o1.val.stackOffset, o1.val.stackOffset, registerPermanence); virtualRegFile[r1].dirty = locked; break;
-				case constant: constantResult += o1.val.value == 0 ? -2 : 1; break;
+				case constant: constantResult += op.subtype == opLogicalAnd ? (o1.val.value == 0 ? -2 : 1) : (o1.val.value == 0 ? 1 : -2); break;
 			} switch(o2.operandType){
 				case flagVar: if(virtualFlags.stackOffset == o2.val.stackOffset){lazyFlag = o2.flagType; break;}
 				case stackVar: if(r1 != -1) r2 = moveOffsetToRegs(o2.val.stackOffset, o2.val.stackOffset, registerPermanence); break;
 				r1 = moveOffsetToRegs(o2.val.stackOffset, o2.val.stackOffset, registerPermanence); break;
-				case constant: constantResult += o2.val.value == 0 ? -2 : 1; break;
+				case constant: constantResult += op.subtype == opLogicalAnd ? (o2.val.value == 0 ? -2 : 1) : (o2.val.value == 0 ? 1 : -2); break;
 			}
-			if(constantResult < 0) return (operand){0, 4, constant, 0, 0, registerPermanence};
-			else if(constantResult == 2) return (operand){1, 4, constant, 0, 0, registerPermanence};
-			if(lazyFlag != -1){emitOpcode(it_32); emitFlag(lazyFlag);}
+			if(constantResult < 0) return (operand){op.subtype == opLogicalOr, 4, constant, 0, 0, registerPermanence};
+			else if(constantResult > (op.subtype == opLogicalAnd)) return (operand){op.subtype != opLogicalOr, 4, constant, 0, 0, registerPermanence};
+			if(lazyFlag != -1){emitOpcode(it_32); emitFlag(op.subtype == opLogicalAnd ? lazyFlag : getOppositeFlag(lazyFlag));}
 			if(r1 != -1){
 				emitOpcode(cmp_imm_32); emitArgument(r1, 4); emitArgument(0, 12);
-				emitOpcode(it_32); emitFlag(flag_ne);
+				emitOpcode(it_32); emitFlag(op.subtype == opLogicalAnd ? flag_ne : flag_eq);
 			}
 			if(r2 != -1){emitOpcode(cmp_imm_32); emitArgument(r2, 4); emitArgument(0, 12);}
 			virtualFlags.dirty = dirty; virtualFlags.stackOffset = curStackOffset; virtualFlags.flagType = flag_ne;
