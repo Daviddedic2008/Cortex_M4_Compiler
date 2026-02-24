@@ -119,6 +119,28 @@ y = (y equals 0) + (x equals 0); // only 1 can be stored in flags at a time. y =
 
 ```
 
+### Logical Operators
+
+Available logical operators: AND, OR, NOT
+
+These conditionals always first compile their arguments and then are treated as a standard binary comparison operator pretty much.
+I don't believe they are fully optimized but they are ok, not too spectacular and have some redundant moving to and from flags.
+
+```rust
+// [o1] logical [o2]
+// [o1] and [o2] can be constant or variables or expressions
+word 1 x = 0; // declare x
+word 1 y = 5; // declare y
+word 1 andCheck = x and y; // andCheck will be either 0 or 1 and live in registers for now
+if(andCheck and y greater 0){ // pretty obvious syntax here. WILL NOT move the second comparison from flags to regs, so this case is good
+	//...
+}
+if(x or (not y)){ // again, obvious syntax. Does what you would expect
+	//...
+}
+
+```
+
 ---
 
 ## Branching

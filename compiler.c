@@ -549,7 +549,6 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 				break;
 				case flagVar:
 				virtualRegFile[r = moveFlagToRegs(o2.val.stackOffset + wIdx * 4, o1.val.stackOffset + wIdx * 4, o2.flagType, registerPermanence)].dirty = dirty;
-				o1.operandType = flagVar; o1.flagType = o2.flagType;
 			}skipWriteback:;
 			if(o1.forceFlush){storeRegisterIntoStack(r, o1.val.stackOffset + wIdx * 4); virtualRegFile[r].dirty = empty;}
 		}
@@ -696,10 +695,32 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 		}
 		virtualFlags.flagType = getFlag(op.subtype);
 		virtualFlags.stackOffset = curStackOffset; curStackOffset += 4; curCompilerTempSz += 4;
-		return (operand){curStackOffset - 4, 4, flagVar, 0, getFlag(op.subtype), registerPermanence};
+		return (operand){curStackOffset - 4, 4, flagVar, getFlag(op.subtype), 0, registerPermanence};
 		}
 		case opLogicalAnd: case opLogicalOr:{
-			;
+			o2 = *operands, o1 = *(operands - 1);
+			int8_t lazyFlag = -1; int8_t r1 = -1; int8_t r2 = -1; int8_t constantResult = 0;
+			switch(o1.operandType){
+				case flagVar: if(virtualFlags.stackOffset == o1.val.stackOffset){lazyFlag = o1.flagType; break;}
+				case stackVar: r1 = moveOffsetToRegs(o1.val.stackOffset, o1.val.stackOffset, registerPermanence); virtualRegFile[r1].dirty = locked; break;
+				case constant: constantResult += o1.val.value == 0 ? -2 : 1; break;
+			} switch(o2.operandType){
+				case flagVar: if(virtualFlags.stackOffset == o2.val.stackOffset){lazyFlag = o2.flagType; break;}
+				case stackVar: if(r1 != -1) r2 = moveOffsetToRegs(o2.val.stackOffset, o2.val.stackOffset, registerPermanence); break;
+				r1 = moveOffsetToRegs(o2.val.stackOffset, o2.val.stackOffset, registerPermanence); break;
+				case constant: constantResult += o2.val.value == 0 ? -2 : 1; break;
+			}
+			if(constantResult < 0) return (operand){0, 4, constant, 0, 0, registerPermanence};
+			else if(constantResult == 2) return (operand){1, 4, constant, 0, 0, registerPermanence};
+			if(lazyFlag != -1){emitOpcode(it_32); emitFlag(lazyFlag);}
+			if(r1 != -1){
+				emitOpcode(cmp_imm_32); emitArgument(r1, 4); emitArgument(0, 12);
+				emitOpcode(it_32); emitFlag(flag_ne);
+			}
+			if(r2 != -1){emitOpcode(cmp_imm_32); emitArgument(r2, 4); emitArgument(0, 12);}
+			virtualFlags.dirty = dirty; virtualFlags.stackOffset = curStackOffset; virtualFlags.flagType = flag_ne;
+			curStackOffset += 4; curCompilerTempSz += 4;
+			return (operand){curStackOffset - 4, 4, flagVar, flag_ne, 0, registerPermanence};
 		}
 	}
 }
@@ -711,7 +732,16 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 #define maxOperands 200
 #define maxBranchDepth 10
 
-const uint8_t operatorPrecedence[] = { 3, 3, 4, 4, 1, 7, 7, 7, 3, 3, 3, 3, 2, 2, 2, 2, 2, 2};
+// comments for clarity here, sorry for the confusion with precedences.
+const uint8_t operatorPrecedence[] = { 
+    4, 4, 5, 5, // Add, Sub, Mul, Div
+    1,          // Equal (Assignment)
+    8, 8, 8,    // Reference(Unary), Writeback, Dereference
+    4, 4, 8, 4, // Bitwise: Or, And, Not(Unary), Xor
+    2, 2, 8,    // Logical: And, Or, Not(Unary)
+    3, 3, 3, 3, 3, 3, // Comparisons: Greater, Less, Equal, GEqual, NEqual, LEqual
+    7, 7        // Volatile Deref/Writeback
+};
 
 typedef struct{
 	uint32_t registerStatus[maxGPRegs];
@@ -840,7 +870,6 @@ void assembleSource(const char* src, const uint32_t progOrigin){
 					break;
 					break;
 					case constant:
-					// if 1, continue. if 0, skip to }. MAKE SURE TO GOTO AND SKIP COND BRANCH
 					if(!condition.val.value){
 						uint8_t depth = 1;
 						while(depth){
@@ -850,7 +879,6 @@ void assembleSource(const char* src, const uint32_t progOrigin){
 					}continue;
 					goto skpCondB;
 					case stackVar:
-					// move to regs, comparing each one to zero. honestly just call assembleOp
 					operandStack[operandIdx++] = condition; operandStack[operandIdx] = (operand){0, 4, constant, 0, 0, registerPermanence};
 					assembleOp((operator){opCmpEqual, 0}, operandStack + operandIdx, registerPermanence);
 				}
@@ -858,11 +886,6 @@ void assembleSource(const char* src, const uint32_t progOrigin){
 				registerPermanence += (branchFound == whileKey) * 128;
 				emitOpcode(bc_imm_32); emitFlag(getOppositeFlag(virtualFlags.flagType)); emitArgument(4096, 12);
 				skpCondB:;
-				// take last known operand. cleanse it from registers if its a temporary.
-				// switch based on its type. if constant, just skip or dont skip code in if. if flag, branch.
-				// if regs, compare w zero and set zero flag, use that to branch or not.
-				// save the memory location of this branch, as its empty. it will be filled in when right brace is found.
-				
 				}snapshotStack[curScope] = getSnapshot(); incrementScope();
 			}
 			operatorIdx = 0;
