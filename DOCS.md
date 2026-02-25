@@ -4,7 +4,7 @@
 
 Single pass compiler, greedy register allocator(that spills based on loop depth and recent use), backpatching for jumps, constant folding, lazy register storage, lazy flag storage.
 This compiler is machine-dependent and relies on a standard "word" size, which is 32 bits for the Cortex M4. This is done to force the programmer to optimize properly.
-Memory footprint is small, with the binary being <128KB and the overall RAM usage(accounting for stack too) being sub-50KB.
+Memory footprint is small, with the binary being <64KB and the overall RAM usage(accounting for stack too) being <32KB.
 
 ---
 
