@@ -811,19 +811,21 @@ void assembleSource(const char* src, const uint32_t progOrigin){
 	int8_t branchFound = -1; uint32_t jmpBackAddr; uint8_t precedence = 0; virtualFlags.dirty = empty;
 	curToken.type = opToken;
 	while(curToken.type != nullToken){
-		nextToken();	
+		nextToken(); const uint32_t tmpSz = allocationSz; const uint8_t tmpFound = allocationFound;
+		allocationSz = 0; allocationFound = 0;
 		switch(curToken.type){
 			case constantToken:
+			allocationSz = tmpSz; allocationFound = tmpFound ? 1 : 0;
 			uint32_t literal = 0;
 			for(uint8_t digit = 0; digit < curToken.len; digit++){
 				literal *= 10;
 				literal += curToken.str[digit] - '0';
 			}
-			if(allocationFound){allocationFound = 0; allocationSz = literal; break;}
+			if(allocationFound){allocationFound = 0; allocationSz = literal; literal *= 4;}
 			operandStack[operandIdx++] = (operand){literal, 4, constant, 0, 0, registerPermanence};
 			break;
 			case sizeToken:
-			allocationFound = 1; allocationSz = 1;
+			allocationFound = 2; allocationSz = 1;
 			break;
 			case keywordToken:
 			switch(curToken.subtype){
@@ -836,17 +838,18 @@ void assembleSource(const char* src, const uint32_t progOrigin){
 			}
 			break;
 			case identifierToken:
-			allocationFound = 0;
+			allocationSz = tmpSz; allocationFound = tmpFound;
 			if(allocationSz > 0){
+				if(allocationFound != 2) operandIdx--;
 				const variableMetadata v = addVariable(curToken.str, curToken.len, allocationSz * 4);
 				operandStack[operandIdx++] = (operand){v.stackOffset, allocationSz * 4, stackVar, 0, flushFound, registerPermanence};
 				allocationSz = 0;
-				
 			}
 			else{
 				const variableMetadata v = retrieveLocalVariable(curToken.str, curToken.len);
 				operandStack[operandIdx++] = (operand){v.stackOffset, v.size, stackVar, 0, flushFound, registerPermanence};
 			}
+			allocationFound = 0;
 			flushFound = 0;
 			break;
 			case opToken:

@@ -28,6 +28,20 @@ word 4 buffer = 0;	// reserves 16 bytes (4 words) on the stack and zeros the var
 
 ---
 
+## Constant Folding
+
+Constant expressions will be folded (as expected), but the WORD keyword can also be used to multiply constants by 4.
+
+```rust
+// word [constant]
+// folds into [constant] * 4 pretty much
+word 64 array;
+1 deref (ref array + word 16) = 100; // write 100 to 17th "element" of array
+
+```
+
+---
+
 ## Variable Usage
 
 Variables can be accessed as either flushable or not. Labeling a variable as flushable will make the compiler force stack writeback for the variable in that said occurrence. This keyword will only take effect on ONE occurrence at a time.
