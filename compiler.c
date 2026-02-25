@@ -467,6 +467,8 @@ forceinline uint32_t evalImm(const uint32_t o1, const uint32_t o2, const uint8_t
 	switch(subtype){
 		case opAdd: return o1 + o2;
 		case opSub: return o1 - o2;
+		case opMul: return o1 * o2;
+		case opDiv: return o1 / o2;
 		case opEqual: return o1 == o2;
 		case opBitwiseAnd: return o1 & o2;
 		case opBitwiseOr: return o1 | o2;
@@ -698,29 +700,63 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 		return (operand){curStackOffset - 4, 4, flagVar, getFlag(op.subtype), 0, registerPermanence};
 		}
 		case opLogicalAnd: case opLogicalOr:{
-			o2 = *operands, o1 = *(operands - 1);
-			int8_t lazyFlag = -1; int8_t r1 = -1; int8_t r2 = -1; int8_t constantResult = 0;
-			switch(o1.operandType){
-				case flagVar: if(virtualFlags.stackOffset == o1.val.stackOffset){lazyFlag = o1.flagType; break;}
-				case stackVar: r1 = moveOffsetToRegs(o1.val.stackOffset, o1.val.stackOffset, registerPermanence); virtualRegFile[r1].dirty = locked; break;
-				case constant: constantResult += op.subtype == opLogicalAnd ? (o1.val.value == 0 ? -2 : 1) : (o1.val.value == 0 ? 1 : -2); break;
-			} switch(o2.operandType){
-				case flagVar: if(virtualFlags.stackOffset == o2.val.stackOffset){lazyFlag = o2.flagType; break;}
-				case stackVar: if(r1 != -1) r2 = moveOffsetToRegs(o2.val.stackOffset, o2.val.stackOffset, registerPermanence); break;
-				r1 = moveOffsetToRegs(o2.val.stackOffset, o2.val.stackOffset, registerPermanence); break;
-				case constant: constantResult += op.subtype == opLogicalAnd ? (o2.val.value == 0 ? -2 : 1) : (o2.val.value == 0 ? 1 : -2); break;
+		o2 = *operands, o1 = *(operands - 1);
+		int8_t lazyFlag = -1; int8_t r1 = -1; int8_t r2 = -1; int8_t constantResult = 0;
+		uint8_t r1d;
+		switch(o1.operandType){
+			case flagVar: if(virtualFlags.stackOffset == o1.val.stackOffset){lazyFlag = o1.flagType; break;}
+			case stackVar: r1 = moveOffsetToRegs(o1.val.stackOffset, o1.val.stackOffset, registerPermanence); r1d = virtualRegFile[r1].dirty; virtualRegFile[r1].dirty = locked; break;
+			case constant: constantResult += op.subtype == opLogicalAnd ? (o1.val.value == 0 ? -2 : 1) : (o1.val.value == 0 ? 1 : -2); break;
+		} switch(o2.operandType){
+			case flagVar: if(virtualFlags.stackOffset == o2.val.stackOffset){lazyFlag = o2.flagType; break;}
+			case stackVar: if(r1 != -1) r2 = moveOffsetToRegs(o2.val.stackOffset, o2.val.stackOffset, registerPermanence); break;
+			r1 = moveOffsetToRegs(o2.val.stackOffset, o2.val.stackOffset, registerPermanence); break;
+			case constant: constantResult += op.subtype == opLogicalAnd ? (o2.val.value == 0 ? -2 : 1) : (o2.val.value == 0 ? 1 : -2); break;
+		}
+		if(constantResult < 0) return (operand){op.subtype == opLogicalOr, 4, constant, 0, 0, registerPermanence};
+		else if(constantResult > (op.subtype == opLogicalAnd)) return (operand){op.subtype != opLogicalOr, 4, constant, 0, 0, registerPermanence};
+		if(lazyFlag != -1){emitOpcode(it_32); emitFlag(op.subtype == opLogicalAnd ? lazyFlag : getOppositeFlag(lazyFlag));}
+		if(r1 != -1){
+			emitOpcode(cmp_imm_32); emitArgument(r1, 4); emitArgument(0, 12);
+			emitOpcode(it_32); emitFlag(op.subtype == opLogicalAnd ? flag_ne : flag_eq);
+			virtualRegFile[r1].dirty = (virtualRegFile[r1].stackOffset >= curStackOffset - curCompilerTempSz && virtualRegFile[r1].stackOffset < curStackOffset) ? empty : r1d;
+		}
+		if(r2 != -1){
+			emitOpcode(cmp_imm_32); emitArgument(r2, 4); emitArgument(0, 12);
+			virtualRegFile[r2].dirty = (virtualRegFile[r2].stackOffset >= curStackOffset - curCompilerTempSz && virtualRegFile[r2].stackOffset < curStackOffset) ? empty : virtualRegFile[r2].dirty;
+		}
+		virtualFlags.dirty = dirty; virtualFlags.stackOffset = curStackOffset; virtualFlags.flagType = flag_ne;
+		curStackOffset += 4; curCompilerTempSz += 4;
+		return (operand){curStackOffset - 4, 4, flagVar, flag_ne, 0, registerPermanence};
+		}
+		case opMul: case opDiv:{
+		o2 = *operands, o1 = *(operands - 1);
+		int8_t r1 = -1, r2 = -1; int64_t constantInMul = -1; uint8_t r1d, r2d;
+		switch(o1.operandType){
+			case constant: constantInMul = o1.val.value; break;
+			case stackVar: r1 = moveOffsetToRegs(o1.val.stackOffset, o1.val.stackOffset, registerPermanence);
+			r1d = virtualRegFile[r1].dirty = locked;
+		} switch(o2.operandType){
+			case constant: if(constantInMul != -1) return (operand){evalImm(constantInMul, o2.val.value, op.subtype), 4, constant, 0, 0, registerPermanence};
+			constantInMul = o2.val.value;
+			case stackVar: 
+			if(r1 == -1){
+				r1 = moveOffsetToRegs(o2.val.stackOffset, o2.val.stackOffset, registerPermanence);
+				r1d = virtualRegFile[r1].dirty; virtualRegFile[r1].dirty = locked;
 			}
-			if(constantResult < 0) return (operand){op.subtype == opLogicalOr, 4, constant, 0, 0, registerPermanence};
-			else if(constantResult > (op.subtype == opLogicalAnd)) return (operand){op.subtype != opLogicalOr, 4, constant, 0, 0, registerPermanence};
-			if(lazyFlag != -1){emitOpcode(it_32); emitFlag(op.subtype == opLogicalAnd ? lazyFlag : getOppositeFlag(lazyFlag));}
-			if(r1 != -1){
-				emitOpcode(cmp_imm_32); emitArgument(r1, 4); emitArgument(0, 12);
-				emitOpcode(it_32); emitFlag(op.subtype == opLogicalAnd ? flag_ne : flag_eq);
+			else{
+				r2 = moveOffsetToRegs(o2.val.stackOffset, o2.val.stackOffset, registerPermanence);
+				r2d = virtualRegFile[r2].dirty; virtualRegFile[r2].dirty = locked;
 			}
-			if(r2 != -1){emitOpcode(cmp_imm_32); emitArgument(r2, 4); emitArgument(0, 12);}
-			virtualFlags.dirty = dirty; virtualFlags.stackOffset = curStackOffset; virtualFlags.flagType = flag_ne;
-			curStackOffset += 4; curCompilerTempSz += 4;
-			return (operand){curStackOffset - 4, 4, flagVar, flag_ne, 0, registerPermanence};
+		}
+		if(constantInMul != -1) r2 = moveConstantToRegs(constantInMul, UINT32_MAX, UINT16_MAX);
+		if(virtualRegFile[r1].stackOffset >= curStackOffset - curCompilerTempSz && virtualRegFile[r1].stackOffset < curStackOffset) virtualRegFile[r1].dirty = empty;
+		if(virtualRegFile[r2].stackOffset >= curStackOffset - curCompilerTempSz && virtualRegFile[r2].stackOffset < curStackOffset) virtualRegFile[r2].dirty = empty;
+		const uint8_t resultReg = getEmptyRegister(curStackOffset, registerPermanence, noCheck); virtualRegFile[resultReg].dirty = dirty; virtualRegFile[resultReg].stackOffset = curStackOffset;
+		if(virtualRegFile[r1].dirty == locked) virtualRegFile[r1].dirty = r1d; if(virtualRegFile[r2].dirty == locked) virtualRegFile[r2].dirty = r2d;
+		emitOpcode(op.subtype == opMul ? mulw_reg_32 : divw_reg_32); emitArgument(resultReg, 4); emitArgument(r1, 4); emitArgument(r2, 4);
+		curStackOffset += 4;
+		return (operand){curStackOffset - 4, 4, stackVar, 0, 0, registerPermanence};	
 		}
 	}
 }
@@ -728,9 +764,9 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 //#############################################################################################################################################
 // EXPRESSION PARSER
 
-#define maxOperatorDepth 100
-#define maxOperands 200
-#define maxBranchDepth 10
+#define maxOperatorDepth 128
+#define maxOperands 256
+#define maxBranchDepth 64
 
 // comments for clarity here, sorry for the confusion with precedences.
 const uint8_t operatorPrecedence[] = { 
