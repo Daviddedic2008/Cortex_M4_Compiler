@@ -545,13 +545,20 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 			uint8_t r; switch(o2.operandType){
 				case constant:
 				virtualRegFile[r = moveConstantToRegs(o2.val.value, o1.val.stackOffset + wIdx * 4, UINT16_MAX)].dirty = dirty;
-				break;
+				goto skipWriteback;
 				case stackVar:
-				virtualRegFile[r = moveOffsetToRegs(o2.val.stackOffset + wIdx * 4, o1.val.stackOffset + wIdx * 4, UINT16_MAX)].dirty = dirty;
+				r = moveOffsetToRegs(o2.val.stackOffset + wIdx * 4, o2.val.stackOffset + wIdx * 4, registerPermanence);
 				break;
 				case flagVar:
-				virtualRegFile[r = moveFlagToRegs(o2.val.stackOffset + wIdx * 4, o1.val.stackOffset + wIdx * 4, o2.flagType, registerPermanence)].dirty = dirty;
-			}skipWriteback:;
+				r = moveFlagToRegs(o2.val.stackOffset + wIdx * 4, o2.val.stackOffset + wIdx * 4, o2.flagType, registerPermanence);
+			}
+			if(!o1.forceFlush){
+				if(o2.val.stackOffset + wIdx * 4 < curStackOffset - curCompilerTempSz || o2.val.stackOffset + wIdx * 4 >= curStackOffset){
+					const uint8_t rr = getEmptyRegister(o1.val.stackOffset + wIdx * 4, registerPermanence, checkIfInRegs);
+					virtualRegFile[rr].dirty = dirty; loadRegisterFromRegs(rr, r);
+				} else{virtualRegFile[r].dirty = dirty; virtualRegFile[r].stackOffset = o1.val.stackOffset + wIdx * 4;}
+			}
+			skipWriteback:;
 			if(o1.forceFlush){storeRegisterIntoStack(r, o1.val.stackOffset + wIdx * 4); virtualRegFile[r].dirty = empty;}
 		}
 		return o1;
@@ -797,7 +804,7 @@ forceinline void restoreSnapshot(const registerSnapshot snapshot){
 				if(r2 != r){flushRegister(r); loadRegisterFromRegs(r, r2); virtualRegFile[r].dirty = clean; virtualRegFile[r2].dirty = empty;} goto continueLoop; 
 			}
 			flushRegister(r); loadRegisterFromStack(r, snapshot.registerStatus[r]); virtualRegFile[r].dirty = clean;
-		}
+		} else flushRegister(r);
 		continueLoop:;
 	}
 }
@@ -875,10 +882,10 @@ void assembleSource(const char* src, const uint32_t progOrigin){
 					case ifKey: break;
 					case whileKey: emitOpcode(b_imm_32); emitArgument(relativeBranchOffsets[curScope] - progAddr, 16);
 				}
+				for(uint8_t r = 0; r < maxGPRegs; r++) if(virtualRegFile[r].stackOffset >= curStackOffset) virtualRegFile[r].dirty = empty;
 				restoreSnapshot(snapshotStack[curScope]);
 				printf("BACKPATCH %d\n", progAddr - relativeBranchOffsets[curScope]); 
 				branchFound = -1;
-				for(uint8_t r = 0; r < maxGPRegs; r++) if(virtualRegFile[r].stackOffset >= curStackOffset) virtualRegFile[r].dirty = empty;
 			}
 			break;
 			case endLine:
