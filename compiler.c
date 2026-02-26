@@ -590,7 +590,6 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 		return (operand){curStackOffset - 4, o1.val.value, stackVar, 0, 0, registerPermanence};
 		}
 		case opWriteback:{
-		// 1 deref 100 = 0;
 		int8_t addrReg = -1;  uint32_t addrConst;
 		const operand o3 = *operands; o2 = *(operands - 1); o1 = *(operands - 2);
 		switch(o2.operandType){
@@ -615,7 +614,7 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 		}
 		if(addrReg > -1) virtualRegFile[addrReg].dirty = empty;
 		for(uint8_t r = 0; r < maxGPRegs; r++){
-			if(virtualRegFile[r].stackOffset == o2.val.value || o2.operandType == stackVar) virtualRegFile[r].dirty = empty;
+			if(virtualRegFile[r].stackOffset == o2.val.value || o2.operandType == stackVar) flushRegister(r);
 		}
 		curStackOffset += o1.val.value * 4; curCompilerTempSz += o1.val.value * 4;
 		return (operand){curStackOffset - o1.val.value * 4, o1.val.value * 4, stackVar, 0, 0, UINT16_MAX};
@@ -645,10 +644,10 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 				case stackVar:
 				if(r1 == -1){
 					r1 = moveOffsetToRegs(o2.val.stackOffset + wIdx * 4, o2.val.stackOffset + wIdx * 4, o2.registerPreference);
-					virtualRegFile[r1].dirty = locked; r1d = virtualRegFile[r1].dirty;
+					r1d = virtualRegFile[r1].dirty; virtualRegFile[r1].dirty = locked;
 				} else {
 					r2 = moveOffsetToRegs(o2.val.stackOffset + wIdx * 4, o2.val.stackOffset + wIdx * 4, o2.registerPreference);
-					virtualRegFile[r2].dirty = locked; r2d = virtualRegFile[r2].dirty;
+					r2d = virtualRegFile[r2].dirty; virtualRegFile[r2].dirty = locked;
 				}
 			}
 			if(virtualRegFile[r1].stackOffset >= curStackOffset - curCompilerTempSz && virtualRegFile[r1].stackOffset < curStackOffset)
@@ -811,130 +810,138 @@ forceinline void restoreSnapshot(const registerSnapshot snapshot){
 
 registerSnapshot snapshotStack[maxBranchDepth]; uint32_t relativeBranchOffsets[maxBranchDepth];
 operator operatorStack[maxOperatorDepth]; operand operandStack[maxOperands];
-void assembleSource(const char* src, const uint32_t progOrigin){
-	initializeVirtualRegs(); curScope = 0;
-	progAddr = 0; setSource(src); uint8_t operatorIdx = 0; uint8_t operandIdx = 0;
-	uint8_t registerPermanence = 0; uint32_t allocationSz = 0; uint8_t allocationFound = 0, flushFound = 0, volatileFound = 0;
-	int8_t branchFound = -1; uint32_t jmpBackAddr; uint8_t precedence = 0; virtualFlags.dirty = empty;
-	curToken.type = opToken;
-	while(curToken.type != nullToken){
-		nextToken(); const uint32_t tmpSz = allocationSz; const uint8_t tmpFound = allocationFound;
-		allocationSz = 0; allocationFound = 0;
+
+forceinline uint8_t combineOperators(uint8_t opIdx){
+	if(opIdx == 0) return 0;
+	switch(operatorStack[opIdx].subtype){
+		case opEqual:
+		if(operatorStack[opIdx-1].subtype == opDereference) operatorStack[--opIdx].subtype = opWriteback;
+		break;
+		case opCmpEqual:
+		switch(operatorStack[opIdx-1].subtype){
+			case opLogicalNot: operatorStack[--opIdx].subtype = opCmpNEqual; break;
+			case opCmpGreater: operatorStack[--opIdx].subtype = opCmpGEqual; break;
+			case opCmpLess: operatorStack[--opIdx].subtype = opCmpLEqual; break;
+		} break;
+	}
+	return opIdx;
+}
+
+#pragma pack(push, 1)
+typedef struct{
+	uint8_t foundAllocation : 1;
+	uint8_t foundFlush : 1;
+	uint8_t foundVolatile : 1;
+	uint8_t foundNegation : 1;
+}persistentToken;
+typedef struct{
+	uint8_t foundWordToken : 1;
+	uint8_t foundOpToken : 1;
+}previousToken;
+#pragma pack(pop, 1)
+uint8_t assembleSource(const char* src, const uint32_t progOrigin){
+	initializeVirtualFlags(); initializeVirtualRegs(); curScope = 0; progAddr = 0;
+	setSource(src); int8_t branchTypeFound = -1;
+	uint8_t operatorIdx = 0, operandIdx = 0;
+	uint32_t registerPermanence = 0, allocationSz = 0; 
+	persistentToken persistentTokens; previousToken previousTokens; uint16_t precedence = 0;
+	*((uint8_t*)&persistentTokens) = 0; *((uint8_t*)&previousTokens) = 0;
+	do{nextToken();
 		switch(curToken.type){
-			case constantToken:
-			allocationSz = tmpSz; allocationFound = tmpFound ? 1 : 0;
-			uint32_t literal = 0;
-			for(uint8_t digit = 0; digit < curToken.len; digit++){
-				literal *= 10;
-				literal += curToken.str[digit] - '0';
+		case constantToken:
+		persistentTokens.foundAllocation = 0;
+		uint32_t literal = 0;
+		for(uint8_t digit = 0; digit < curToken.len; digit++){
+			literal *= 10;
+			literal += curToken.str[digit] - '0';
+		} if(persistentTokens.foundNegation){literal = ~literal + 1; persistentTokens.foundNegation = 0;}
+		if(previousTokens.foundWordToken){literal *= 4; persistentTokens.foundAllocation = 1; previousTokens.foundWordToken = 0; allocationSz = literal;}
+		operandStack[operandIdx++] = (operand){literal, 4, constant, 0, 0, registerPermanence};
+		break;
+		case sizeToken:
+		previousTokens.foundWordToken = 1; persistentTokens.foundAllocation = 1; allocationSz = 4;
+		break;
+		case identifierToken:
+		if(persistentTokens.foundAllocation){
+			if(!previousTokens.foundWordToken) operandIdx--;
+			previousTokens.foundWordToken = 0; persistentTokens.foundAllocation = 0;
+			const variableMetadata v = addVariable(curToken.str, curToken.len, allocationSz);
+			operandStack[operandIdx++] = (operand){v.stackOffset, allocationSz, stackVar, 0, persistentTokens.foundFlush, registerPermanence};
+		} else{
+			const variableMetadata v = retrieveLocalVariable(curToken.str, curToken.len);
+			operandStack[operandIdx++] = (operand){v.stackOffset, v.size, stackVar, 0, persistentTokens.foundFlush, registerPermanence};
+		} persistentTokens.foundFlush = 0;
+		break;
+		case opToken:
+		if(previousTokens.foundOpToken && curToken.subtype == opSub){persistentTokens.foundNegation = 1; break;}
+		previousTokens.foundOpToken = 1; 
+		const uint32_t curPrecedence = operatorPrecedence[curToken.subtype] + precedence;
+		if(persistentTokens.foundVolatile && curToken.subtype == opDereference) curToken.subtype = opDereferenceVolatile;
+		while(1){
+			uint32_t prevPrecedence = operatorIdx > 0 ? operatorStack[operatorIdx-1].precedence : 0;
+			if(curPrecedence > prevPrecedence || operatorIdx == 1) break;
+			const operand tmp = assembleOp(operatorStack[--operatorIdx], operandStack + operandIdx - 1, registerPermanence);
+			const uint8_t oIdx = operatorStack[operatorIdx].subtype; operandIdx -= numOperands(oIdx);
+			operandStack[operandIdx++] = tmp;
+		} operatorStack[operatorIdx++] = (operator){curToken.subtype, curPrecedence};
+		break;
+		case endLine:
+		for(int8_t idx = operatorIdx - 1; idx >= 0; idx--){
+			idx = combineOperators(idx);
+			const operand tmp = assembleOp(operatorStack[idx], operandStack + operandIdx - 1, registerPermanence);
+			operandIdx -= numOperands(operatorStack[idx].subtype);
+			operandStack[operandIdx++] = tmp;
+		}
+		operatorIdx = 0;
+		for(uint8_t r = 0; r < maxGPRegs; r++){
+			if(virtualRegFile[r].stackOffset > curStackOffset - curCompilerTempSz && virtualRegFile[r].stackOffset < curStackOffset){
+				virtualRegFile[r].dirty = empty;
 			}
-			if(allocationFound){allocationFound = 0; allocationSz = literal; literal *= 4;}
-			operandStack[operandIdx++] = (operand){literal, 4, constant, 0, 0, registerPermanence};
+		}
+		curStackOffset -= curCompilerTempSz; curCompilerTempSz = 0;
+		break;
+		case keywordToken:
+		switch(curToken.subtype){
+			case flushKey:
+			persistentTokens.foundFlush = 1; break;
+			case ifKey: case whileKey:
+			branchTypeFound = curToken.subtype; break;
+			case volatileKey: persistentTokens.foundVolatile = 1; break;
+		} break;
+		case clampToken:
+		switch(curToken.subtype){
+			case parenthesesL: case parenthesesR:
+			precedence += (curToken.subtype == parenthesesL) * 16 - (curToken.subtype == parenthesesR) * 16;
 			break;
-			case sizeToken:
-			allocationFound = 2; allocationSz = 1;
-			break;
-			case keywordToken:
-			switch(curToken.subtype){
-				case flushKey:
-				flushFound = 1;
-				break;
-				case ifKey: case whileKey:
-				branchFound = curToken.subtype; break;
-				case volatileKey: volatileFound = 1; break;
-			}
-			break;
-			case identifierToken:
-			allocationSz = tmpSz; allocationFound = tmpFound;
-			if(allocationSz > 0){
-				if(allocationFound != 2) operandIdx--;
-				const variableMetadata v = addVariable(curToken.str, curToken.len, allocationSz * 4);
-				operandStack[operandIdx++] = (operand){v.stackOffset, allocationSz * 4, stackVar, 0, flushFound, registerPermanence};
-				allocationSz = 0;
-			}
-			else{
-				const variableMetadata v = retrieveLocalVariable(curToken.str, curToken.len);
-				operandStack[operandIdx++] = (operand){v.stackOffset, v.size, stackVar, 0, flushFound, registerPermanence};
-			}
-			allocationFound = 0;
-			flushFound = 0;
-			break;
-			case opToken:
-			const uint32_t curPrecedence = operatorPrecedence[curToken.subtype] + precedence;
-			if(volatileFound && curToken.subtype == opDereference) curToken.subtype = opDereferenceVolatile;
-			while(1){
-				uint32_t prevPrecedence = operatorIdx > 0 ? operatorStack[operatorIdx-1].precedence : 0;
-				if(curPrecedence > prevPrecedence || operatorIdx == 1) break;
-				const operand tmp = assembleOp(operatorStack[--operatorIdx], operandStack + operandIdx - 1, registerPermanence);
-				const uint8_t oIdx = operatorStack[operatorIdx].subtype; operandIdx -= numOperands(oIdx);
-				operandStack[operandIdx++] = tmp;
-			} operatorStack[operatorIdx++] = (operator){curToken.subtype, curPrecedence};
-			break;
-			case clampToken:
-			switch(curToken.subtype){
-				case parenthesesL: case parenthesesR:
-				precedence += (curToken.subtype == parenthesesL) * 10 - (curToken.subtype == parenthesesR) * 10;
-				break;	
-				case curlyBL: goto endLineG;
-				case curlyBR:
-				decrementScope(); 
-				switch(branchFound){
-					case ifKey: break;
-					case whileKey: emitOpcode(b_imm_32); emitArgument(relativeBranchOffsets[curScope] - progAddr, 16);
-				}
-				for(uint8_t r = 0; r < maxGPRegs; r++) if(virtualRegFile[r].stackOffset >= curStackOffset) virtualRegFile[r].dirty = empty;
-				restoreSnapshot(snapshotStack[curScope]);
-				printf("BACKPATCH %d\n", progAddr - relativeBranchOffsets[curScope]); 
-				branchFound = -1;
-			}
-			break;
-			case endLine:
-			endLineG:;
+			case curlyBL:
 			for(int8_t idx = operatorIdx - 1; idx >= 0; idx--){
-				if(idx > 0){
-					if(operatorStack[idx].subtype == opEqual && operatorStack[idx-1].subtype == opDereference) operatorStack[--idx].subtype = opWriteback;
-					else if(operatorStack[idx].subtype == opCmpEqual){
-						switch(operatorStack[idx-1].subtype){
-							case opLogicalNot: operatorStack[--idx].subtype = opCmpNEqual; break;
-							case opCmpGreater: operatorStack[--idx].subtype = opCmpGEqual; break;
-							case opCmpLess: operatorStack[--idx].subtype = opCmpLEqual; break;
-						}
-					}
-				}
+				idx = combineOperators(idx);
 				const operand tmp = assembleOp(operatorStack[idx], operandStack + operandIdx - 1, registerPermanence);
 				operandIdx -= numOperands(operatorStack[idx].subtype);
 				operandStack[operandIdx++] = tmp;
 			}
-			if(curToken.subtype == curlyBL){ 
-				switch(branchFound){
+			operatorIdx = 0;
+			switch(branchTypeFound){
 				case whileKey: relativeBranchOffsets[curScope] = progAddr;
-				case ifKey:
-				const operand condition = operandStack[--operandIdx];
+				case ifKey: const operand condition = operandStack[--operandIdx];
 				switch(condition.operandType){
-					case flagVar:
-					// nothing yet
-					break;
-					break;
 					case constant:
 					if(!condition.val.value){
-						uint8_t depth = 1;
-						while(depth){
+						for(uint8_t depth = 1; depth;){
 							nextToken();
 							if(curToken.type == clampToken) depth += (curToken.subtype == curlyBL) - (curToken.subtype == curlyBR);
 						}
-					}continue;
-					goto skpCondB;
+					} break;
 					case stackVar:
 					operandStack[operandIdx++] = condition; operandStack[operandIdx] = (operand){0, 4, constant, 0, 0, registerPermanence};
 					assembleOp((operator){opCmpEqual, 0}, operandStack + operandIdx, registerPermanence);
 				}
-				if(branchFound == ifKey) relativeBranchOffsets[curScope] = progAddr;
-				registerPermanence += (branchFound == whileKey) * 128;
-				emitOpcode(bc_imm_32); emitFlag(getOppositeFlag(virtualFlags.flagType)); emitArgument(4096, 12);
-				skpCondB:;
-				}snapshotStack[curScope] = getSnapshot(); incrementScope();
+				break;
 			}
-			operatorIdx = 0;
+			if(branchTypeFound == ifKey) relativeBranchOffsets[curScope] = progAddr;
+			registerPermanence += (branchTypeFound == whileKey) * 128;
+			emitOpcode(bc_imm_32); emitFlag(getOppositeFlag(virtualFlags.flagType)); emitArgument(4096, 12);
+			snapshotStack[curScope] = getSnapshot(); incrementScope();
 			for(uint8_t r = 0; r < maxGPRegs; r++){
 				if(virtualRegFile[r].stackOffset > curStackOffset - curCompilerTempSz && virtualRegFile[r].stackOffset < curStackOffset){
 					virtualRegFile[r].dirty = empty;
@@ -942,6 +949,19 @@ void assembleSource(const char* src, const uint32_t progOrigin){
 			}
 			curStackOffset -= curCompilerTempSz; curCompilerTempSz = 0;
 			break;
+			case curlyBR:
+			decrementScope(); 
+			switch(branchTypeFound){
+				case ifKey: break;
+				case whileKey: emitOpcode(b_imm_32); emitArgument(relativeBranchOffsets[curScope] - progAddr, 16);
+			}
+			for(uint8_t r = 0; r < maxGPRegs; r++) if(virtualRegFile[r].stackOffset >= curStackOffset) virtualRegFile[r].dirty = empty;
+			restoreSnapshot(snapshotStack[curScope]);
+			printf("BACKPATCH %d\n", progAddr - relativeBranchOffsets[curScope]); 
+			branchTypeFound = -1;
 		}
-	}
+		break;
+		}
+	}while(curToken.type != nullToken);
+	return 0;
 }
