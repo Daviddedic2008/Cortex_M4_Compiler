@@ -215,6 +215,8 @@ if x equals 5{
 
 ```
 
+---
+
 ## Arrays
 
 Arrays do not formally exist, but here every variable can be treated as a pseudo-array.
@@ -226,3 +228,44 @@ word 100 arr; // define array of 100 32-bit words
 
 
 ```
+
+---
+
+## Error Handling
+
+Here I compiled a list of error codes and their meaning.
+
+### NO_ERROR
+**Code 0**
+
+No error encountered in compilation
+
+### UNEXPECTED_EXPRESSION
+**Code 1**
+
+Unparseable expression, usually due to too little/too many operands or operators
+
+### DELIMITER_MISMATCH
+**Code 2**
+
+Mismatched parentheses or brackets
+
+### UNDEFINED_VARIABLE
+**Code 3*
+
+Attempted access to an undefined variable
+
+### OPERATOR_DEPTH_EXCEEDED
+**Code 4**
+
+Too many nested operators, overflow in static operator stack
+
+### BRANCH_DEPTH_EXCEEDED
+**Code 5**
+
+Too many nested branches, overflow in static branch backpatch address stack
+
+### USER_VAR_LIMIT_EXCEEDED
+**Code 6**
+
+Too many user defined variables in a single scope, overflow of static variable metadata buffer
