@@ -10,8 +10,8 @@ int main(int argc, char* argv[]){
 	char *buffer = malloc(length + 1);
 	size_t readCount = fread(buffer, 1, length, fptr);
     buffer[readCount] = '\0';
-	assembleSource(buffer, 0);
+	const uint8_t errCd = assembleSource(buffer, 0);
 	fclose(fptr);
     free(buffer);
-	return 0;
+	return errCd;
 }

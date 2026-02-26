@@ -837,15 +837,19 @@ typedef struct{
 typedef struct{
 	uint8_t foundWordToken : 1;
 	uint8_t foundOpToken : 1;
+	uint8_t foundEndlineToken : 1;
 }previousToken;
 #pragma pack(pop, 1)
+#define resetPrevious(prev) *((uint8_t*)&prev) = 0;
+
 uint8_t assembleSource(const char* src, const uint32_t progOrigin){
 	initializeVirtualFlags(); initializeVirtualRegs(); curScope = 0; progAddr = 0;
 	setSource(src); int8_t branchTypeFound = -1;
 	uint8_t operatorIdx = 0, operandIdx = 0;
 	uint32_t registerPermanence = 0, allocationSz = 0; 
 	persistentToken persistentTokens; previousToken previousTokens; uint16_t precedence = 0;
-	*((uint8_t*)&persistentTokens) = 0; *((uint8_t*)&previousTokens) = 0;
+	*((uint8_t*)&persistentTokens) = 0; resetPrevious(previousTokens);
+	uint8_t started = 0;
 	do{nextToken();
 		switch(curToken.type){
 		case constantToken:
@@ -873,7 +877,7 @@ uint8_t assembleSource(const char* src, const uint32_t progOrigin){
 		} persistentTokens.foundFlush = 0;
 		break;
 		case opToken:
-		if(previousTokens.foundOpToken && curToken.subtype == opSub){persistentTokens.foundNegation = 1; break;}
+		if(previousTokens.foundOpToken){if(curToken.subtype == opSub){persistentTokens.foundNegation = 1; break;} else return unexpectedExpression;}
 		previousTokens.foundOpToken = 1; 
 		const uint32_t curPrecedence = operatorPrecedence[curToken.subtype] + precedence;
 		if(persistentTokens.foundVolatile && curToken.subtype == opDereference) curToken.subtype = opDereferenceVolatile;
@@ -888,10 +892,12 @@ uint8_t assembleSource(const char* src, const uint32_t progOrigin){
 		case endLine:
 		for(int8_t idx = operatorIdx - 1; idx >= 0; idx--){
 			idx = combineOperators(idx);
+			if(numOperands(operatorStack[idx].subtype) > operandIdx){return unexpectedExpression;}
 			const operand tmp = assembleOp(operatorStack[idx], operandStack + operandIdx - 1, registerPermanence);
 			operandIdx -= numOperands(operatorStack[idx].subtype);
 			operandStack[operandIdx++] = tmp;
 		}
+		if(operandIdx > 1) return unexpectedExpression;
 		operatorIdx = 0;
 		for(uint8_t r = 0; r < maxGPRegs; r++){
 			if(virtualRegFile[r].stackOffset > curStackOffset - curCompilerTempSz && virtualRegFile[r].stackOffset < curStackOffset){
@@ -962,6 +968,7 @@ uint8_t assembleSource(const char* src, const uint32_t progOrigin){
 		}
 		break;
 		}
+		if(started) resetPrevious(previousTokens); started = 1;
 	}while(curToken.type != nullToken);
-	return 0;
+	return noError;
 }
