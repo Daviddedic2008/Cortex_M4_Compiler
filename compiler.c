@@ -31,7 +31,7 @@ enum tokenType {
 };
 
 enum opSubtype {
-	opAdd, opSub, opMul, opDiv, opEqual, opReference, opWriteback,
+	opAdd, opSub, opMul, opDiv, opEqual, opReference, opWriteback, opWritebackArr, opDereferenceArr,
 	opDereference, opBitwiseOr, opBitwiseAnd, opBitwiseNot, opBitwiseXor, opLogicalAnd,
 	opLogicalOr, opLogicalNot, opCmpGreater, opCmpLess, opCmpEqual, opCmpGEqual, opCmpNEqual, opCmpLEqual,
 	opDereferenceVolatile, opWritebackVolatile
@@ -117,6 +117,7 @@ void nextToken(){
 		case 'l': if(tokenCmpLiteral(curToken, "less")){curToken.type = opToken; curToken.subtype = opCmpLess;}
 		else{curToken.type = identifierToken; curToken.subtype = 0;} break;
 		case 'i': if(tokenCmpLiteral(curToken, "if")){curToken.type = keywordToken; curToken.subtype = ifKey;}
+		else if(tokenCmpLiteral(curToken, "in")){curToken.type = opToken; curToken.subtype = opDereferenceArr;}
 		else{curToken.type = identifierToken; curToken.subtype = 0;} break;
 		case 'c': if(tokenCmpLiteral(curToken, "continue")){curToken.type = keywordToken; curToken.subtype = continueKey;}
 		else{curToken.type = identifierToken; curToken.subtype = 0;} break;
@@ -152,7 +153,7 @@ typedef enum opcode {
 	cmp_reg_32, cmp_imm_32, 
 	eors_reg_32, eors_imm_32, orrs_reg_32, andw_imm_32, andw_reg_32, orrs_imm_32,
 	mvn_imm_32, mvn_reg_32, b_imm_32, bc_imm_32,
-	b_imm_16, bc_imm_16, mov_lit_16, ldr_imm_16, str_imm_16, mov_reg_reg_16
+	b_imm_16, bc_imm_16, mov_lit_16, ldr_imm_16, ldr_gpr_imm_16, str_imm_16, mov_reg_reg_16
 }opcode;
 
 #define lim32 bc_imm_32
@@ -181,6 +182,7 @@ void emitOpcode(const uint8_t code) {
 	case mov_lit_16:     printf("MOV_LIT_16"); break;
 	case str_imm_16:     printf("STR_IMM_16"); break;
 	case ldr_imm_16:     printf("LDR_IMM_16"); break;
+	case ldr_gpr_imm_16: printf("LDR_GPR_IMM_16"); break;
 	case subw_imm_32:    printf("SUBW_IMM_32"); break;
 	case addw_imm_32:    printf("ADDW_IMM_32"); break;
 	case subw_reg_32:    printf("SUBW_REG_32"); break;
@@ -427,8 +429,8 @@ typedef struct{uint8_t subtype, precedence;}operator;
 
 #define maxUserVariables 256
 variableMetadata variableBuffer[maxUserVariables]; uint8_t variableIdx = 0;
-uint32_t curStackOffset = 0; uint8_t curScope = 0;
-uint32_t curCompilerTempSz = 0;
+uint32_t curStackOffset = 0; uint32_t curCompilerTempSz = 0;
+uint8_t curScope = 0;
 
 variableMetadata addVariable(const char* name, const uint8_t strLen, const uint32_t size){
 	variableBuffer[variableIdx] = (variableMetadata){curStackOffset, size, name, strLen, curScope}; 
@@ -437,16 +439,6 @@ variableMetadata addVariable(const char* name, const uint8_t strLen, const uint3
 }
 
 forceinline void addCompilerTemp(const uint32_t sz){curStackOffset += sz; curCompilerTempSz += sz;}
-
-void decrementScope(){
-	curScope--; if (variableIdx == 0) { return; }
-	for (variableMetadata* v = variableBuffer + variableIdx - 1; v >= variableBuffer && v->scope > curScope; v--) {
-		variableIdx--;
-		curStackOffset -= v->size;
-	}
-	curStackOffset -= curCompilerTempSz; curCompilerTempSz = 0;
-}
-forceinline void incrementScope(){curScope++;}
 
 forceinline uint8_t compareNames(const char* name, uint8_t len, const char* name2, uint8_t len2){
 	for(; len > 0 && len2 > 0;){if(name[--len] != name2[--len2]){return 0;}}
@@ -527,7 +519,8 @@ forceinline uint8_t getOppositeFlag(const uint8_t flag){
 
 forceinline uint8_t numOperands(const uint8_t subtype){
 	switch(subtype){
-		case opWriteback: return 3;
+		case opWritebackArr: return 4;
+		case opWriteback: case opDereferenceArr: return 3;
 		case opLogicalNot: case opBitwiseNot: case opReference: return 1;
 		default: return 2;
 	}
@@ -553,10 +546,13 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 				r = moveFlagToRegs(o2.val.stackOffset + wIdx * 4, o2.val.stackOffset + wIdx * 4, o2.flagType, registerPermanence);
 			}
 			if(!o1.forceFlush){
-				if(o2.val.stackOffset + wIdx * 4 < curStackOffset - curCompilerTempSz || o2.val.stackOffset + wIdx * 4 >= curStackOffset){
+				if((o2.val.stackOffset + wIdx * 4) < (curStackOffset - curCompilerTempSz) || (o2.val.stackOffset + wIdx * 4) >= curStackOffset){
 					const uint8_t rr = getEmptyRegister(o1.val.stackOffset + wIdx * 4, registerPermanence, checkIfInRegs);
 					virtualRegFile[rr].dirty = dirty; loadRegisterFromRegs(rr, r);
-				} else{virtualRegFile[r].dirty = dirty; virtualRegFile[r].stackOffset = o1.val.stackOffset + wIdx * 4;}
+				} else{virtualRegFile[r].dirty = dirty; 
+				for(uint8_t rr = 0; rr < maxGPRegs; rr++) 
+				if(virtualRegFile[rr].stackOffset == o1.val.stackOffset + wIdx * 4) virtualRegFile[rr].dirty = empty; 
+				virtualRegFile[r].stackOffset = o1.val.stackOffset + wIdx * 4;}
 			}
 			skipWriteback:;
 			if(o1.forceFlush){storeRegisterIntoStack(r, o1.val.stackOffset + wIdx * 4); virtualRegFile[r].dirty = empty;}
@@ -586,8 +582,48 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 			}
 			
 		}while(num32BitTransfers > 0);
-		curCompilerTempSz += 4; curStackOffset += 4;
-		return (operand){curStackOffset - 4, o1.val.value, stackVar, 0, 0, registerPermanence};
+		curCompilerTempSz += num32BitTransfers * 4; curStackOffset += num32BitTransfers * 4;
+		return (operand){curStackOffset - num32BitTransfers * 4, num32BitTransfers * 4, stackVar, 0, 0, registerPermanence};
+		}
+		case opDereferenceArr:{
+		const operand o3 = *operands; o2 = *(operands - 1); o1 = *(operands - 2);
+		uint32_t num32BitTransfers = o1.val.value; int8_t offsetReg = -1;
+		for(uint8_t r = 0; r < maxGPRegs; r++){
+			uint8_t cond; switch(o3.operandType){
+				case stackVar: cond = virtualRegFile[r].stackOffset >= o2.val.stackOffset && virtualRegFile[r].stackOffset < o2.val.stackOffset + o2.size;
+				if(num32BitTransfers > 1){
+					offsetReg = moveOffsetToRegs(o3.val.stackOffset, UINT32_MAX, UINT16_MAX);
+					emitOpcode(subw_reg_32); emitArgument(offsetReg, 4); emitArgument(stackPointerReg, 4); emitArgument(offsetReg, 4);
+				}else{
+					offsetReg = moveOffsetToRegs(o3.val.stackOffset, o3.val.stackOffset, o3.registerPreference);
+				} virtualRegFile[offsetReg].dirty = locked;
+				break;
+				case constant: cond = virtualRegFile[r].stackOffset >= o2.val.stackOffset + o3.val.value && virtualRegFile[r].stackOffset < o2.val.stackOffset + o3.val.value + o1.val.value; break;
+			} if(cond) flushRegister(r);
+		}
+		do{
+			num32BitTransfers--;
+			switch(o3.operandType){
+				case constant:
+				virtualRegFile[moveOffsetToRegs(o2.val.stackOffset + o3.val.value + num32BitTransfers * 4, curStackOffset + num32BitTransfers * 4, UINT16_MAX)].dirty = dirty;
+				break;
+				case stackVar:
+				const uint8_t resultReg = getEmptyRegister(curStackOffset + num32BitTransfers * 4, registerPermanence, checkIfInRegs);
+				virtualRegFile[resultReg].dirty = dirty; 
+				if(o1.val.value > 1){
+					if(resultReg < 8 && offsetReg < 8 && num32BitTransfers < 124){
+						emitOpcode(ldr_gpr_imm_16); emitArgument(offsetReg, 4); emitArgument(resultReg, 4); emitArgument(num32BitTransfers, 5);
+					} else if(num32BitTransfers * 4 < 4096){
+						emitOpcode(ldrw_imm_32); emitArgument(offsetReg, 4); emitArgument(resultReg, 4); emitArgument(num32BitTransfers * 4, 12);
+					} else{
+						storeConstantInReg(scratchReg1, num32BitTransfers * 4); emitOpcode(ldrw_reg_32);
+						emitArgument(offsetReg, 4); emitArgument(resultReg, 4); emitArgument(scratchReg1, 4);
+					}
+				} else{loadRegisterFromStackR(resultReg, offsetReg);}
+			}
+		}while(num32BitTransfers > 0); if(offsetReg != -1) virtualRegFile[offsetReg].dirty = empty;
+		curCompilerTempSz += o1.val.value * 4; curStackOffset += o1.val.value * 4;
+		return (operand){curStackOffset - o1.val.value * 4, o1.val.value * 4, stackVar, 0, 0, registerPermanence};
 		}
 		case opWriteback:{
 		int8_t addrReg = -1;  uint32_t addrConst;
@@ -617,7 +653,7 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 			if(virtualRegFile[r].stackOffset == o2.val.value || o2.operandType == stackVar) flushRegister(r);
 		}
 		curStackOffset += o1.val.value * 4; curCompilerTempSz += o1.val.value * 4;
-		return (operand){curStackOffset - o1.val.value * 4, o1.val.value * 4, stackVar, 0, 0, UINT16_MAX};
+		return (operand){curStackOffset - o1.val.value * 4, o1.val.value * 4, stackVar, 0, 0, registerPermanence};
 		}
 		case opSub: case opAdd: case opBitwiseAnd: case opBitwiseOr:{
 		o2 = *operands, o1 = *(operands - 1);
@@ -778,7 +814,7 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 const uint8_t operatorPrecedence[] = { 
     4, 4, 5, 5, // Add, Sub, Mul, Div
     1,          // Equal (Assignment)
-    8, 8, 8,    // Reference(Unary), Writeback, Dereference
+    8, 8, 8, 8, 8,    // Reference(Unary), Writeback, Dereference, Array Writeback, Array Dereference
     4, 4, 8, 4, // Bitwise: Or, And, Not(Unary), Xor
     2, 2, 8,    // Logical: And, Or, Not(Unary)
     3, 3, 3, 3, 3, 3, // Comparisons: Greater, Less, Equal, GEqual, NEqual, LEqual
@@ -827,6 +863,17 @@ forceinline uint8_t combineOperators(uint8_t opIdx){
 	return opIdx;
 }
 
+uint8_t backpatchIdx = 0;
+void decrementScope(){
+	curScope--; backpatchIdx--; if (variableIdx == 0) { goto stripTemporaries; }
+	for (variableMetadata* v = variableBuffer + variableIdx - 1; v >= variableBuffer && v->scope > curScope; v--) {
+		variableIdx--;
+		curStackOffset -= v->size;
+	} stripTemporaries:;
+	curStackOffset -= curCompilerTempSz; curCompilerTempSz = 0;
+}
+forceinline void incrementScope(){curScope++; backpatchIdx++;}
+
 #pragma pack(push, 1)
 typedef struct{
 	uint8_t foundAllocation : 1;
@@ -834,11 +881,6 @@ typedef struct{
 	uint8_t foundVolatile : 1;
 	uint8_t foundNegation : 1;
 }persistentToken;
-typedef struct{
-	uint8_t foundWordToken : 1;
-	uint8_t foundOpToken : 1;
-	uint8_t foundEndlineToken : 1;
-}previousToken;
 #pragma pack(pop, 1)
 #define resetPrevious(prev) *((uint8_t*)&prev) = 0;
 
@@ -847,8 +889,8 @@ uint8_t assembleSource(const char* src, const uint32_t progOrigin){
 	setSource(src); int8_t branchTypeFound = -1;
 	uint8_t operatorIdx = 0, operandIdx = 0;
 	uint32_t registerPermanence = 0, allocationSz = 0; 
-	persistentToken persistentTokens; previousToken previousTokens; uint16_t precedence = 0;
-	*((uint8_t*)&persistentTokens) = 0; resetPrevious(previousTokens);
+	persistentToken persistentTokens; token previousToken = (token){(void*)0, 0, nullToken, 0}; uint16_t precedence = 0;
+	*((uint8_t*)&persistentTokens) = 0;
 	uint8_t started = 0;
 	do{nextToken();
 		switch(curToken.type){
@@ -859,16 +901,15 @@ uint8_t assembleSource(const char* src, const uint32_t progOrigin){
 			literal *= 10;
 			literal += curToken.str[digit] - '0';
 		} if(persistentTokens.foundNegation){literal = ~literal + 1; persistentTokens.foundNegation = 0;}
-		if(previousTokens.foundWordToken){literal *= 4; persistentTokens.foundAllocation = 1; previousTokens.foundWordToken = 0; allocationSz = literal;}
+		if(previousToken.type == sizeToken){literal *= 4; persistentTokens.foundAllocation = 1; allocationSz = literal;}
 		operandStack[operandIdx++] = (operand){literal, 4, constant, 0, 0, registerPermanence};
 		break;
 		case sizeToken:
-		previousTokens.foundWordToken = 1; persistentTokens.foundAllocation = 1; allocationSz = 4;
+		persistentTokens.foundAllocation = 1; allocationSz = 4;
 		break;
 		case identifierToken:
 		if(persistentTokens.foundAllocation){
-			if(!previousTokens.foundWordToken) operandIdx--;
-			previousTokens.foundWordToken = 0; persistentTokens.foundAllocation = 0;
+			if(!(previousToken.type == sizeToken)) operandIdx--; persistentTokens.foundAllocation = 0;
 			const variableMetadata v = addVariable(curToken.str, curToken.len, allocationSz);
 			operandStack[operandIdx++] = (operand){v.stackOffset, allocationSz, stackVar, 0, persistentTokens.foundFlush, registerPermanence};
 		} else{
@@ -877,8 +918,7 @@ uint8_t assembleSource(const char* src, const uint32_t progOrigin){
 		} persistentTokens.foundFlush = 0;
 		break;
 		case opToken:
-		if(previousTokens.foundOpToken){if(curToken.subtype == opSub){persistentTokens.foundNegation = 1; break;} else return unexpectedExpression;}
-		previousTokens.foundOpToken = 1; 
+		if(previousToken.type == opToken){if(curToken.subtype == opSub){persistentTokens.foundNegation = 1; break;} else return unexpectedExpression;}
 		const uint32_t curPrecedence = operatorPrecedence[curToken.subtype] + precedence;
 		if(persistentTokens.foundVolatile && curToken.subtype == opDereference) curToken.subtype = opDereferenceVolatile;
 		while(1){
@@ -898,7 +938,7 @@ uint8_t assembleSource(const char* src, const uint32_t progOrigin){
 			operandStack[operandIdx++] = tmp;
 		}
 		if(operandIdx > 1) return unexpectedExpression;
-		operatorIdx = 0;
+		operatorIdx = 0; operandIdx = 0;
 		for(uint8_t r = 0; r < maxGPRegs; r++){
 			if(virtualRegFile[r].stackOffset > curStackOffset - curCompilerTempSz && virtualRegFile[r].stackOffset < curStackOffset){
 				virtualRegFile[r].dirty = empty;
@@ -922,15 +962,17 @@ uint8_t assembleSource(const char* src, const uint32_t progOrigin){
 			case curlyBL:
 			for(int8_t idx = operatorIdx - 1; idx >= 0; idx--){
 				idx = combineOperators(idx);
+				if(numOperands(operatorStack[idx].subtype) > operandIdx){return unexpectedExpression;}
 				const operand tmp = assembleOp(operatorStack[idx], operandStack + operandIdx - 1, registerPermanence);
 				operandIdx -= numOperands(operatorStack[idx].subtype);
 				operandStack[operandIdx++] = tmp;
-			}
+			} if(operandIdx > 1) return unexpectedExpression;
 			operatorIdx = 0;
 			switch(branchTypeFound){
-				case whileKey: relativeBranchOffsets[curScope] = progAddr;
+				case whileKey: relativeBranchOffsets[backpatchIdx] = progAddr;
 				case ifKey: const operand condition = operandStack[--operandIdx];
 				switch(condition.operandType){
+					case flagVar: operandIdx = 0; operatorIdx = 0;
 					case constant:
 					if(!condition.val.value){
 						for(uint8_t depth = 1; depth;){
@@ -940,14 +982,14 @@ uint8_t assembleSource(const char* src, const uint32_t progOrigin){
 					} break;
 					case stackVar:
 					operandStack[operandIdx++] = condition; operandStack[operandIdx] = (operand){0, 4, constant, 0, 0, registerPermanence};
-					assembleOp((operator){opCmpEqual, 0}, operandStack + operandIdx, registerPermanence);
+					assembleOp((operator){opCmpEqual, 0}, operandStack + operandIdx, registerPermanence); operandIdx -= 2;
 				}
 				break;
 			}
-			if(branchTypeFound == ifKey) relativeBranchOffsets[curScope] = progAddr;
+			if(branchTypeFound == ifKey) relativeBranchOffsets[backpatchIdx] = progAddr;
 			registerPermanence += (branchTypeFound == whileKey) * 128;
 			emitOpcode(bc_imm_32); emitFlag(getOppositeFlag(virtualFlags.flagType)); emitArgument(4096, 12);
-			snapshotStack[curScope] = getSnapshot(); incrementScope();
+			snapshotStack[backpatchIdx] = getSnapshot(); incrementScope();
 			for(uint8_t r = 0; r < maxGPRegs; r++){
 				if(virtualRegFile[r].stackOffset > curStackOffset - curCompilerTempSz && virtualRegFile[r].stackOffset < curStackOffset){
 					virtualRegFile[r].dirty = empty;
@@ -959,16 +1001,16 @@ uint8_t assembleSource(const char* src, const uint32_t progOrigin){
 			decrementScope(); 
 			switch(branchTypeFound){
 				case ifKey: break;
-				case whileKey: emitOpcode(b_imm_32); emitArgument(relativeBranchOffsets[curScope] - progAddr, 16);
+				case whileKey: emitOpcode(b_imm_32); emitArgument(relativeBranchOffsets[backpatchIdx] - progAddr - 4, 16);
 			}
 			for(uint8_t r = 0; r < maxGPRegs; r++) if(virtualRegFile[r].stackOffset >= curStackOffset) virtualRegFile[r].dirty = empty;
-			restoreSnapshot(snapshotStack[curScope]);
-			printf("BACKPATCH %d\n", progAddr - relativeBranchOffsets[curScope]); 
+			restoreSnapshot(snapshotStack[backpatchIdx]);
+			printf("BACKPATCH %d\n", progAddr - relativeBranchOffsets[backpatchIdx] - 4); 
 			branchTypeFound = -1;
 		}
 		break;
 		}
-		if(started) resetPrevious(previousTokens); started = 1;
+		previousToken = curToken;
 	}while(curToken.type != nullToken);
 	return noError;
 }

@@ -161,7 +161,10 @@ if(x or (not y)){ // again, obvious syntax. Does what you would expect
 
 ## Branching
 
-All branches are made to handle either direct comparisons, variable inputs, or constant inputs
+All branches are made to handle either direct comparisons, variable inputs, or constant inputs.
+Branching is handled via careful register snapshotting to ensure register states persist beyond conditional blocks.
+Inside conditionals, attempt to refrain from changing the register file too much, as this invokes a certain efficiency penalty.
+The snapshot restorer is, however, efficient and will only load/store to stack if nescessary. It prioritizes moving between registers if it can.
 
 ### IF
 
@@ -219,14 +222,17 @@ if x equals 5{
 
 ## Arrays
 
-Arrays do not formally exist, but here every variable can be treated as a pseudo-array.
+Arrays do not formally exist, but here every variable can be treated as a pseudo-array with the IN operator.
+The main advantage to using this operator over DEREF is a form of strict aliasing.
+The compiler assumes memory loads/stores performed with IN only affect the variable(array, usually) being passed, and therefore do not have to flush stuff out of registers.
 
 ```rust
+// [size] in [array] [offset]
+// [size] is a constant, [array] is a variable, [offset] can be an expression, constant, or variable.
+// in can also be used to write back to locations!
 word 100 arr; // define array of 100 32-bit words
-
-1 deref (ref arr + 4) = 5; // write 5 to the 4th word in the array. This compiles to one move immediate and one store immediate.
-
-
+word fifthWord = 1 in arr (word 4); // get fifth element of the array. This compiles down to a single load
+1 in arr (word 4) = 7; // write 7 to the 5th element/word of arr
 ```
 
 ---
@@ -234,38 +240,44 @@ word 100 arr; // define array of 100 32-bit words
 ## Error Handling
 
 Here I compiled a list of error codes and their meaning.
+Error handling is very rough, but the compiler does know when to fault instead of comtinuing to emit buggy binary.
 
-### NO_ERROR
-**Code 0**
+### Quick Reference Table
 
-No error encountered in compilation
+| Code | Identifier |
+| :--- | :--------- |
+| **0** | `NO_ERROR` |
+| **1** | `UNEXPECTED_EXPRESSION` |
+| **2** | `DELIMITER_MISMATCH` |
+| **3** | `UNDEFINED_VARIABLE` |
+| **4** | `OPERATOR_DEPTH_EXCEEDED` |
+| **5** | `BRANCH_DEPTH_EXCEEDED` |
+| **6** | `USER_VAR_LIMIT_EXCEEDED` |
 
-### UNEXPECTED_EXPRESSION
-**Code 1**
+---
 
-Unparseable expression, usually due to too little/too many operands or operators
+### Detailed Definitions
 
-### DELIMITER_MISMATCH
-**Code 2**
+#### NO_ERROR
+> No error encountered in compilation
 
-Mismatched parentheses or brackets
+#### UNEXPECTED_EXPRESSION
+> Unparseable expression, usually due to too little/too many operands or operators
 
-### UNDEFINED_VARIABLE
-**Code 3*
+#### DELIMITER_MISMATCH
+> Mismatched parentheses or brackets
 
-Attempted access to an undefined variable
+#### UNDEFINED_VARIABLE
+> Attempted access to an undefined variable
 
-### OPERATOR_DEPTH_EXCEEDED
-**Code 4**
+#### OPERATOR_DEPTH_EXCEEDED
+> Too many nested operators, overflow in static operator stack
 
-Too many nested operators, overflow in static operator stack
+#### BRANCH_DEPTH_EXCEEDED
+> Too many nested branches, overflow in static branch backpatch address stack
 
-### BRANCH_DEPTH_EXCEEDED
-**Code 5**
+#### USER_VAR_LIMIT_EXCEEDED
+> Too many user defined variables in a single scope, overflow of static variable metadata buffer
 
-Too many nested branches, overflow in static branch backpatch address stack
-
-### USER_VAR_LIMIT_EXCEEDED
-**Code 6**
-
-Too many user defined variables in a single scope, overflow of static variable metadata buffer
+---
+*Note: These codes are returned via `assembleSource()` as an unsigned byte.*
