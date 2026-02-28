@@ -162,6 +162,7 @@ if(x or (not y)){ // again, obvious syntax. Does what you would expect
 ## Branching
 
 All branches are made to handle either direct comparisons, variable inputs, or constant inputs.
+Branching is done inverted kind of, this optimizes out redundant jumps that some compilers will emit.
 Branching is handled via careful register snapshotting to ensure register states persist beyond conditional blocks.
 Inside conditionals, attempt to refrain from changing the register file too much, as this invokes a certain efficiency penalty.
 The snapshot restorer is, however, efficient and will only load/store to stack if nescessary. It prioritizes moving between registers if it can.
