@@ -6,6 +6,13 @@ Single pass compiler, greedy register allocator(that spills based on loop depth 
 This compiler is machine-dependent and relies on a standard "word" size, which is 32 bits for the Cortex M4. This is done to force the programmer to optimize properly.
 Memory footprint is small, with the binary being <64KB and the overall RAM usage(accounting for stack too) being <32KB.
 
+This language is almost a higher-level version of assembly language, with variables, scopes, conditional blocks, and more.
+Single pass compilation has some issues, especially when implemented in <2000 lines of C. Certain stuff is left to the user to optimize.
+The language is perfect for making small scripts that interface with GPIO, as the manual dereferencing helps with that.
+Since the compiler is small enough to theoretically run on the Cortex M4 itself with room to spare, this language could be used in a pseudo-OS on that MCU.
+
+Now, here's the actual documentation:
+
 ---
 
 ## Syntax
@@ -130,19 +137,23 @@ Arithmetic is optimized for 32-bit variables, as bigger vars must be written thr
 * Addition works with any sizes
 * USE 32 BIT VALUES FOR ARITHMETIC! Using larger values will result in unneeded load/store pairs.
 
-### INCREMENT/DECREMENT
+### INCREMENT/DECREMENT or SCALE
 
 Although doing x = x + 5; is valid and will compile, the quirks of single-pass shunting yard result in x being moved to a new register, while freeing up the previous one.
-This introduces a slight amount of unneeded register pressure that the += and -= operators fix. This is kinda a patch to fix a problem with the compiler itself, but oh well.
+This introduces a slight amount of unneeded register pressure that the +=, -=, \*=, and /= operators fix. This is kinda a patch to fix a problem with the compiler itself, but oh well.
 
 ```rust
 // [var] += [inc]
 // [var] -= [inc]
-// in both cases [var] has to be a variable and [inc] can be a variable, expression, or constant
+// [var] *= [inc]
+// [var] /= [inc]
+// in all cases [var] has to be a variable and [inc] can be a variable, expression, or constant
 word x = 5;
 x += 5; // add 5 to x without changing register
 word y = 7;
 x -= y; // subtracts y from x without changing register
+x *= 5; // scales x by 5
+x /= 5; // scales x by 1/5
 
 ```
 
