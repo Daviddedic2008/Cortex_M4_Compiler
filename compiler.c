@@ -473,8 +473,8 @@ forceinline uint32_t evalImm(const uint32_t o1, const uint32_t o2, const uint8_t
 
 forceinline uint8_t returnImmOpcode(const uint8_t subtype){
 	switch(subtype){
-		case opAdd: return addw_imm_32;
-		case opSub: return subw_imm_32;
+		case opAdd: case opIncrement: return addw_imm_32;
+		case opSub: case opDecrement: return subw_imm_32;
 		case opMul: return mulw_reg_32;
 		case opBitwiseAnd: return andw_imm_32;
 		case opBitwiseOr: return orrs_imm_32;
@@ -482,8 +482,8 @@ forceinline uint8_t returnImmOpcode(const uint8_t subtype){
 	}
 } forceinline uint8_t returnRegOpcode(const uint8_t subtype){
 	switch(subtype){
-		case opAdd: return addw_reg_32;
-		case opSub: return subw_reg_32;
+		case opAdd: case opIncrement: return addw_reg_32;
+		case opSub: case opDecrement: return subw_reg_32;
 		case opMul: return mulw_reg_32;
 		case opBitwiseAnd: return andw_reg_32;
 		case opBitwiseOr: return orrs_reg_32;
@@ -494,7 +494,7 @@ forceinline uint8_t returnImmOpcode(const uint8_t subtype){
 forceinline uint8_t immSize(const uint8_t subtype){
 	switch(subtype){
 		case opBitwiseAnd: case opBitwiseXor: case opBitwiseOr: return 8;
-		case opAdd: case opSub: case opBitwiseNot: return 16;
+		case opIncrement: case opDecrement: case opAdd: case opSub: case opBitwiseNot: return 16;
 	}
 }
 
@@ -706,6 +706,37 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 		curStackOffset += num32BitAdds * 4; curCompilerTempSz += num32BitAdds * 4;
 		return (operand){curStackOffset - num32BitAdds * 4, num32BitAdds * 4, stackVar, 0, 0, registerPermanence};
 		}
+		case opIncrement: case opDecrement:{
+		o2 = *operands, o1 = *(operands - 1);
+		const uint32_t num32BitAdds = ((o1.size > o2.size ? o1.size : o2.size) + 3) >> 2;
+		for(uint32_t wIdx = 0; wIdx < num32BitAdds; wIdx++){
+			int64_t constantInAdd = -1; int8_t r1 = -1; uint8_t r1d, r2d;
+			r1 = moveOffsetToRegs(o1.val.stackOffset + wIdx * 4, o1.val.stackOffset + wIdx * 4, o1.registerPreference);
+			r1d = virtualRegFile[r1].dirty; virtualRegFile[r1].dirty = locked; int8_t r2 = -1;
+			switch(o2.operandType){
+				case constant:
+				if(!wIdx){constantInAdd = o2.val.value; if(o2.val.value >= 2 << immSize(op.subtype)) r2 = moveConstantToRegs(o2.val.value, curStackOffset - curCompilerTempSz, UINT16_MAX);}
+				else constantInAdd = 0;
+				break;
+				case stackVar:
+				if(r1 == -1){
+					r1 = moveOffsetToRegs(o2.val.stackOffset + wIdx * 4, o2.val.stackOffset + wIdx * 4, o2.registerPreference);
+					r1d = virtualRegFile[r1].dirty; virtualRegFile[r1].dirty = locked;
+				} else {
+					r2 = moveOffsetToRegs(o2.val.stackOffset + wIdx * 4, o2.val.stackOffset + wIdx * 4, o2.registerPreference);
+					r2d = virtualRegFile[r2].dirty; virtualRegFile[r2].dirty = locked;
+				}
+			}const uint32_t compilerSz = curStackOffset + curCompilerTempSz == 0; virtualRegFile[r1].dirty = dirty;
+			if(r2 != -1 && virtualRegFile[r2].stackOffset >= curStackOffset - curCompilerTempSz && virtualRegFile[r2].stackOffset < compilerSz)
+			virtualRegFile[r2].dirty = empty; else virtualRegFile[r2].dirty = r2d;
+			if(r2 == -1) emitOpcode(returnImmOpcode(op.subtype)); else emitOpcode(returnRegOpcode(op.subtype));
+			emitModifier(wIdx == 0);
+			emitArgument(r1, 4); emitArgument(r1, 4); emitArgument(r2 == -1 ? constantInAdd : r2, r2 == -1 ? immSize(op.subtype) : 4);
+		}
+		curStackOffset += num32BitAdds * 4; curCompilerTempSz += num32BitAdds * 4;
+		return (operand){curStackOffset - num32BitAdds * 4, num32BitAdds * 4, stackVar, 0, 0, registerPermanence};
+			
+		}
 		case opCmpEqual: case opCmpGreater: case opCmpLess: case opCmpGEqual: case opCmpLEqual: case opCmpNEqual:{
 		o2 = *operands, o1 = *(operands - 1);
 		flushFlags();
@@ -820,7 +851,7 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 
 // comments for clarity here, sorry for the confusion with precedences.
 const uint8_t operatorPrecedence[] = { 
-    4, 4, 8, 8, 5, 5, // Add, Sub, Inc, Dec, Mul, Div
+    4, 4, 1, 1, 5, 5, // Add, Sub, Inc, Dec, Mul, Div
     1, 1,          // Equal (Assignment), Free (Manual register management shi)
     8, 8, 8, 8, 8,    // Reference(Unary), Writeback, Dereference, Array Writeback, Array Dereference
     4, 4, 8, 4, // Bitwise: Or, And, Not(Unary), Xor
@@ -859,15 +890,17 @@ forceinline uint8_t combineOperators(uint8_t opIdx){
 	if(opIdx == 0) return 0;
 	switch(operatorStack[opIdx].subtype){
 		case opEqual:
-		if(operatorStack[opIdx-1].subtype == opDereference) operatorStack[--opIdx].subtype = opWriteback;
+		switch(operatorStack[opIdx-1].subtype){
+			case opDereference: operatorStack[--opIdx].subtype = opWriteback; break;
+			case opAdd: operatorStack[--opIdx].subtype = opIncrement; break;
+			case opSub: operatorStack[--opIdx].subtype = opDecrement; break;
+		}
 		break;
 		case opCmpEqual:
 		switch(operatorStack[opIdx-1].subtype){
 			case opLogicalNot: operatorStack[--opIdx].subtype = opCmpNEqual; break;
 			case opCmpGreater: operatorStack[--opIdx].subtype = opCmpGEqual; break;
 			case opCmpLess: operatorStack[--opIdx].subtype = opCmpLEqual; break;
-			case opAdd: operatorStack[--opIdx].subtype = opIncrement; break;
-			case opSub: operatorStack[--opIdx].subtype = opDecrement; break;
 		} break;
 	}
 	return opIdx;
@@ -892,7 +925,6 @@ typedef struct{
 	uint8_t foundNegation : 1;
 }persistentToken;
 #pragma pack(pop, 1)
-#define resetPrevious(prev) *((uint8_t*)&prev) = 0;
 
 uint8_t assembleSource(const char* src, const uint32_t progOrigin){
 	initializeVirtualFlags(); initializeVirtualRegs(); curScope = 0; progAddr = 0;
@@ -928,8 +960,8 @@ uint8_t assembleSource(const char* src, const uint32_t progOrigin){
 		} persistentTokens.foundFlush = 0;
 		break;
 		case opToken:
-		if(previousToken.type == opToken){if(curToken.subtype == opSub){persistentTokens.foundNegation = 1; break;} else return unexpectedExpression;}
 		const uint32_t curPrecedence = operatorPrecedence[curToken.subtype] + precedence;
+		if(previousToken.type == opToken) goto skipWhileParse;
 		if(persistentTokens.foundVolatile && curToken.subtype == opDereference) curToken.subtype = opDereferenceVolatile;
 		while(1){
 			uint32_t prevPrecedence = operatorIdx > 0 ? operatorStack[operatorIdx-1].precedence : 0;
@@ -937,7 +969,7 @@ uint8_t assembleSource(const char* src, const uint32_t progOrigin){
 			const operand tmp = assembleOp(operatorStack[--operatorIdx], operandStack + operandIdx - 1, registerPermanence);
 			const uint8_t oIdx = operatorStack[operatorIdx].subtype; operandIdx -= numOperands(oIdx);
 			operandStack[operandIdx++] = tmp;
-		} operatorStack[operatorIdx++] = (operator){curToken.subtype, curPrecedence};
+		} skipWhileParse:; operatorStack[operatorIdx++] = (operator){curToken.subtype, curPrecedence};
 		break;
 		case endLine:
 		for(int8_t idx = operatorIdx - 1; idx >= 0; idx--){

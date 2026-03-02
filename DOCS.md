@@ -173,7 +173,7 @@ Available logical operators: AND, OR, NOT
 
 These conditionals always first compile their arguments and then are treated as a standard binary comparison operator pretty much.
 THEY ARE NOT SHORT-CIRCUITING!!! This is a big missing feature but just use nested ifs if you need short circuiting.
-You CANNOT assume that if the laft side of an AND is false it won't evaluate the right.
+You CANNOT assume that if the left side of an AND is false it won't evaluate the right.
 I don't believe they are fully optimized but they are ok, not too spectacular and have some redundant moving to and from flags.
 
 ```rust
