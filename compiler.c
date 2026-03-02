@@ -31,7 +31,7 @@ enum tokenType {
 };
 
 enum opSubtype {
-	opAdd, opSub, opIncrement, opDecrement, opMul, opDiv, opEqual, opFree, opReference, opWriteback, opWritebackArr, opDereferenceArr,
+	opAdd, opSub, opIncrement, opDecrement, opMul, opScaleM, opDiv, opScaleD, opEqual, opFree, opReference, opWriteback, opWritebackArr, opDereferenceArr,
 	opDereference, opBitwiseOr, opBitwiseAnd, opBitwiseNot, opBitwiseXor, opLogicalAnd,
 	opLogicalOr, opLogicalNot, opCmpGreater, opCmpLess, opCmpEqual, opCmpGEqual, opCmpNEqual, opCmpLEqual,
 	opDereferenceVolatile, opWritebackVolatile
@@ -819,7 +819,7 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 			r1d = virtualRegFile[r1].dirty = locked;
 		} switch(o2.operandType){
 			case constant: if(constantInMul != -1) return (operand){evalImm(constantInMul, o2.val.value, op.subtype), 4, constant, 0, 0, registerPermanence};
-			constantInMul = o2.val.value;
+			constantInMul = o2.val.value; break;
 			case stackVar: 
 			if(r1 == -1){
 				r1 = moveOffsetToRegs(o2.val.stackOffset, o2.val.stackOffset, registerPermanence);
@@ -830,15 +830,25 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 				r2d = virtualRegFile[r2].dirty; virtualRegFile[r2].dirty = locked;
 			}
 		}
-		if(constantInMul != -1){r2 = moveConstantToRegs(constantInMul, UINT32_MAX, UINT16_MAX); r2d = empty;}
-		if(virtualRegFile[r1].stackOffset >= curStackOffset - curCompilerTempSz && virtualRegFile[r1].stackOffset < curStackOffset) virtualRegFile[r1].dirty = empty;
+		case opScaleM: case opScaleD:{
+		o2 = *operands, o1 = *(operands - 1);
+		int8_t r1 = -1, r2 = -1; int64_t constantInMul = -1; uint8_t r1d, r2d;
+		r1 = moveOffsetToRegs(o1.val.stackOffset, o1.val.stackOffset, registerPermanence);
+		r1d = virtualRegFile[r1].dirty; virtualRegFile[r1].dirty = locked;
+		switch(o2.operandType){
+			case constant: r2 = moveConstantToRegs(o2.val.value, UINT32_MAX, UINT16_MAX); r2d = empty; break;
+			case stackVar: 
+			r2 = moveOffsetToRegs(o2.val.stackOffset, o2.val.stackOffset, registerPermanence);
+			r2d = virtualRegFile[r2].dirty; 
+		} virtualRegFile[r2].dirty = locked;
+		virtualRegFile[r1].dirty = r1d;
 		if(virtualRegFile[r2].stackOffset >= curStackOffset - curCompilerTempSz && virtualRegFile[r2].stackOffset < curStackOffset) virtualRegFile[r2].dirty = empty;
-		const uint8_t resultReg = getEmptyRegister(curStackOffset, registerPermanence, noCheck); virtualRegFile[resultReg].dirty = dirty; virtualRegFile[resultReg].stackOffset = curStackOffset;
 		if(virtualRegFile[r1].dirty == locked) virtualRegFile[r1].dirty = r1d; if(virtualRegFile[r2].dirty == locked) virtualRegFile[r2].dirty = r2d;
-		emitOpcode(op.subtype == opMul ? mulw_reg_32 : divw_reg_32); emitArgument(resultReg, 4); emitArgument(r1, 4); emitArgument(r2, 4);
+		emitOpcode(op.subtype == opScaleM ? mulw_reg_32 : divw_reg_32); emitArgument(r1, 4); emitArgument(r1, 4); emitArgument(r2, 4);
 		curStackOffset += 4;
 		return (operand){curStackOffset - 4, 4, stackVar, 0, 0, registerPermanence};	
 		}
+	}
 	}
 }
 
@@ -851,7 +861,7 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 
 // comments for clarity here, sorry for the confusion with precedences.
 const uint8_t operatorPrecedence[] = { 
-    4, 4, 1, 1, 5, 5, // Add, Sub, Inc, Dec, Mul, Div
+    4, 4, 1, 1, 5, 1, 5, 1, // Add, Sub, Inc, Dec, Mul, scaleMul, Div, scaleDiv
     1, 1,          // Equal (Assignment), Free (Manual register management shi)
     8, 8, 8, 8, 8,    // Reference(Unary), Writeback, Dereference, Array Writeback, Array Dereference
     4, 4, 8, 4, // Bitwise: Or, And, Not(Unary), Xor
@@ -894,6 +904,8 @@ forceinline uint8_t combineOperators(uint8_t opIdx){
 			case opDereference: operatorStack[--opIdx].subtype = opWriteback; break;
 			case opAdd: operatorStack[--opIdx].subtype = opIncrement; break;
 			case opSub: operatorStack[--opIdx].subtype = opDecrement; break;
+			case opMul: operatorStack[--opIdx].subtype = opScaleM; break;
+			case opDiv: operatorStack[--opIdx].subtype = opScaleD; break;
 		}
 		break;
 		case opCmpEqual:
