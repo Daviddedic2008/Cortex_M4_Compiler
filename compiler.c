@@ -31,7 +31,7 @@ enum tokenType {
 };
 
 enum opSubtype {
-	opAdd, opSub, opIncrement, opDecrement, opMul, opDiv, opEqual, opReference, opWriteback, opWritebackArr, opDereferenceArr,
+	opAdd, opSub, opIncrement, opDecrement, opMul, opDiv, opEqual, opFree, opReference, opWriteback, opWritebackArr, opDereferenceArr,
 	opDereference, opBitwiseOr, opBitwiseAnd, opBitwiseNot, opBitwiseXor, opLogicalAnd,
 	opLogicalOr, opLogicalNot, opCmpGreater, opCmpLess, opCmpEqual, opCmpGEqual, opCmpNEqual, opCmpLEqual,
 	opDereferenceVolatile, opWritebackVolatile
@@ -79,7 +79,7 @@ forceinline void setSource(const char* c){src = c;}
 
 void nextToken(){
 	while(isNullChar(*src))src++;
-	if(*src == '#') do{src++;}while(*src != '#');
+	if(*src == '#'){do{src++;}while(*src != '#'); src++;}
 	curToken = (token){(void*)0, 0, nullToken, 0}; if(*src == '\0')return;
 	curToken.str = src; curToken.len = 0;
 	if(isSingle(*src)){src++; curToken.len++;}
@@ -119,13 +119,13 @@ void nextToken(){
 		else{curToken.type = identifierToken; curToken.subtype = 0;} break;
 		case 'i': if(tokenCmpLiteral(curToken, "if")){curToken.type = keywordToken; curToken.subtype = ifKey;}
 		else if(tokenCmpLiteral(curToken, "in")){curToken.type = opToken; curToken.subtype = opDereferenceArr;}
-		else if(tokenCmpLiteral(curToken, "increment")){curToken.type = opToken; curToken.subtype = opIncrement;}
 		else{curToken.type = identifierToken; curToken.subtype = 0;} break;
 		case 'c': if(tokenCmpLiteral(curToken, "continue")){curToken.type = keywordToken; curToken.subtype = continueKey;}
 		else{curToken.type = identifierToken; curToken.subtype = 0;} break;
 		case 'b': if(tokenCmpLiteral(curToken, "break")){curToken.type = keywordToken; curToken.subtype = breakKey;}
 		else{curToken.type = identifierToken; curToken.subtype = 0;} break;
 		case 'f': if(tokenCmpLiteral(curToken, "flush")){curToken.type = keywordToken; curToken.subtype = flushKey;}
+		else if(tokenCmpLiteral(curToken, "free")){curToken.type = opToken; curToken.subtype = opFree;}
 		else{curToken.type = identifierToken; curToken.subtype = 0;} break;
 		case 'v': if(tokenCmpLiteral(curToken, "volatile")){curToken.type = keywordToken; curToken.subtype = volatileKey;}
 		else{curToken.type = identifierToken; curToken.subtype = 0;} break;
@@ -523,7 +523,7 @@ forceinline uint8_t numOperands(const uint8_t subtype){
 	switch(subtype){
 		case opWritebackArr: return 4;
 		case opWriteback: case opDereferenceArr: return 3;
-		case opLogicalNot: case opBitwiseNot: case opReference: return 1;
+		case opFree: case opLogicalNot: case opBitwiseNot: case opReference: return 1;
 		default: return 2;
 	}
 }
@@ -559,6 +559,11 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 			skipWriteback:;
 			if(o1.forceFlush){storeRegisterIntoStack(r, o1.val.stackOffset + wIdx * 4); virtualRegFile[r].dirty = empty;}
 		}
+		return o1;
+		}
+		case opFree:{
+		o1 = *operands; for(uint8_t r = 0; r < maxGPRegs; r++)
+		if(virtualRegFile[r].stackOffset >= o1.val.stackOffset && virtualRegFile[r].stackOffset < o1.val.stackOffset + o1.size) virtualRegFile[r].dirty = empty;
 		return o1;
 		}
 		case opReference:{
@@ -666,7 +671,7 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 			switch(o1.operandType){
 				case constant:
 				constantInAdd = wIdx ? 0 : o1.val.value;
-				if(o1.val.value >= 2 << immSize(op.subtype) && o2.operandType != constant && !wIdx) r1 = moveConstantToRegs(o1.val.value, curStackOffset - curCompilerTempSz + 1, UINT16_MAX);
+				if(o1.val.value >= 2 << immSize(op.subtype) && o2.operandType != constant && !wIdx) r1 = moveConstantToRegs(o1.val.value, curStackOffset - curCompilerTempSz, UINT16_MAX);
 				break;
 				case stackVar:
 				r1 = moveOffsetToRegs(o1.val.stackOffset + wIdx * 4, o1.val.stackOffset + wIdx * 4, o1.registerPreference);
@@ -677,7 +682,7 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 			switch(o2.operandType){
 				case constant:
 				if(constantInAdd >= 0) {return (operand) {evalImm(constantInAdd, o2.val.value, op.subtype), 4, constant, 0, 0, registerPermanence};}
-				if(!wIdx){constantInAdd = o2.val.value; if(o2.val.value >= 2 << immSize(op.subtype)) r2 = moveConstantToRegs(o2.val.value, curStackOffset - curCompilerTempSz + 1, UINT16_MAX);}
+				if(!wIdx){constantInAdd = o2.val.value; if(o2.val.value >= 2 << immSize(op.subtype)) r2 = moveConstantToRegs(o2.val.value, curStackOffset - curCompilerTempSz, UINT16_MAX);}
 				else constantInAdd = 0;
 				break;
 				case stackVar:
@@ -688,10 +693,10 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 					r2 = moveOffsetToRegs(o2.val.stackOffset + wIdx * 4, o2.val.stackOffset + wIdx * 4, o2.registerPreference);
 					r2d = virtualRegFile[r2].dirty; virtualRegFile[r2].dirty = locked;
 				}
-			}
-			if(virtualRegFile[r1].stackOffset >= curStackOffset - curCompilerTempSz && virtualRegFile[r1].stackOffset < curStackOffset)
+			}const uint32_t compilerSz = curStackOffset + curCompilerTempSz == 0;
+			if(virtualRegFile[r1].stackOffset >= curStackOffset - curCompilerTempSz && virtualRegFile[r1].stackOffset < compilerSz)
 			virtualRegFile[r1].dirty = empty; else virtualRegFile[r1].dirty = r1d;
-			if(r2 != -1 && virtualRegFile[r2].stackOffset >= curStackOffset - curCompilerTempSz && virtualRegFile[r2].stackOffset < curStackOffset)
+			if(r2 != -1 && virtualRegFile[r2].stackOffset >= curStackOffset - curCompilerTempSz && virtualRegFile[r2].stackOffset < compilerSz)
 			virtualRegFile[r2].dirty = empty; else virtualRegFile[r2].dirty = r2d;
 			const uint8_t resultReg = getEmptyRegister(curStackOffset + wIdx * 4, registerPermanence, noCheck); virtualRegFile[resultReg].dirty = dirty;
 			if(r2 == -1) emitOpcode(returnImmOpcode(op.subtype)); else emitOpcode(returnRegOpcode(op.subtype));
@@ -736,7 +741,7 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 			if(virtualRegFile[r1].stackOffset >= curStackOffset - curCompilerTempSz && virtualRegFile[r1].stackOffset < compilerCmpOffset)
 			virtualRegFile[r1].dirty = empty; else virtualRegFile[r1].dirty = r1d;
 			if(r2 != -1){ if(virtualRegFile[r2].stackOffset >= curStackOffset - curCompilerTempSz && virtualRegFile[r2].stackOffset < compilerCmpOffset)
-			virtualRegFile[r2].dirty = empty; else virtualRegFile[r2].dirty = r2d;} printf("%d\n", virtualRegFile[r2].dirty);
+			virtualRegFile[r2].dirty = empty; else virtualRegFile[r2].dirty = r2d;}
 			if(r2 == -1) emitOpcode(subs_imm_32); else emitOpcode(subs_reg_32); emitModifier(wIdx == 0); emitArgument(scratchReg1, 4);
 			emitArgument(r1, 4); emitArgument(r2 == -1 ? constantInCmp : r2, r2 == -1 ? 12 : 4);
 		}
@@ -794,7 +799,7 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 				r2d = virtualRegFile[r2].dirty; virtualRegFile[r2].dirty = locked;
 			}
 		}
-		if(constantInMul != -1) r2 = moveConstantToRegs(constantInMul, UINT32_MAX, UINT16_MAX);
+		if(constantInMul != -1){r2 = moveConstantToRegs(constantInMul, UINT32_MAX, UINT16_MAX); r2d = empty;}
 		if(virtualRegFile[r1].stackOffset >= curStackOffset - curCompilerTempSz && virtualRegFile[r1].stackOffset < curStackOffset) virtualRegFile[r1].dirty = empty;
 		if(virtualRegFile[r2].stackOffset >= curStackOffset - curCompilerTempSz && virtualRegFile[r2].stackOffset < curStackOffset) virtualRegFile[r2].dirty = empty;
 		const uint8_t resultReg = getEmptyRegister(curStackOffset, registerPermanence, noCheck); virtualRegFile[resultReg].dirty = dirty; virtualRegFile[resultReg].stackOffset = curStackOffset;
@@ -816,7 +821,7 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 // comments for clarity here, sorry for the confusion with precedences.
 const uint8_t operatorPrecedence[] = { 
     4, 4, 8, 8, 5, 5, // Add, Sub, Inc, Dec, Mul, Div
-    1,          // Equal (Assignment)
+    1, 1,          // Equal (Assignment), Free (Manual register management shi)
     8, 8, 8, 8, 8,    // Reference(Unary), Writeback, Dereference, Array Writeback, Array Dereference
     4, 4, 8, 4, // Bitwise: Or, And, Not(Unary), Xor
     2, 2, 8,    // Logical: And, Or, Not(Unary)
@@ -861,6 +866,8 @@ forceinline uint8_t combineOperators(uint8_t opIdx){
 			case opLogicalNot: operatorStack[--opIdx].subtype = opCmpNEqual; break;
 			case opCmpGreater: operatorStack[--opIdx].subtype = opCmpGEqual; break;
 			case opCmpLess: operatorStack[--opIdx].subtype = opCmpLEqual; break;
+			case opAdd: operatorStack[--opIdx].subtype = opIncrement; break;
+			case opSub: operatorStack[--opIdx].subtype = opDecrement; break;
 		} break;
 	}
 	return opIdx;

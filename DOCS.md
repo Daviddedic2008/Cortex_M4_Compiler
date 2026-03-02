@@ -44,6 +44,8 @@ word 64 array;
 
 ## Variable Usage
 
+### FLUSH
+
 Variables can be accessed as either flushable or not. Labeling a variable as flushable will make the compiler force stack writeback for the variable in that said occurrence. This keyword will only take effect on ONE occurrence at a time.
 
 ```rust
@@ -52,6 +54,22 @@ memoryLocation = 100; // you want this variable to write back to stack always, f
 flush memoryLocation = 5; // forces stack writeback in this case
 memoryLocation = 5; // if memoryLocation is already in registers, load there
 
+
+```
+
+### FREE
+
+At the end of a scope, all registers containing variables that are now out of scope are automatically declared empty.
+However, since this is a single pass compiler with no live range analysis, variables will persist in registers across the whole scope, which increases pressure.
+To remedy this, the FREE keyword was added. when you call FREE, it tells the compiler to free up the registers the variable was in, if it was in registers at all.
+
+```rust
+// free [variable]
+// [variable] must be a variable, as indicated
+word 1 x = 5;
+word y = x * 4 + 5; // this is the last use of x
+free x; // tell compiler to treat x's register as empty
+word y = 6; // will most likely reuse x's register
 
 ```
 
@@ -111,6 +129,22 @@ Arithmetic is optimized for 32-bit variables, as bigger vars must be written thr
 * **Important Differences:** * Only the first 32 bits of values will be multiplied/divided. Long multiplication/division isn't supported.
 * Addition works with any sizes
 * USE 32 BIT VALUES FOR ARITHMETIC! Using larger values will result in unneeded load/store pairs.
+
+### INCREMENT/DECREMENT
+
+Although doing x = x + 5; is valid and will compile, the quirks of single-pass shunting yard result in x being moved to a new register, while freeing up the previous one.
+This introduces a slight amount of unneeded register pressure that the += and -= operators fix. This is kinda a patch to fix a problem with the compiler itself, but oh well.
+
+```rust
+// [var] += [inc]
+// [var] -= [inc]
+// in both cases [var] has to be a variable and [inc] can be a variable, expression, or constant
+word x = 5;
+x += 5; // add 5 to x without changing register
+word y = 7;
+x -= y; // subtracts y from x without changing register
+
+```
 
 ---
 
