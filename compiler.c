@@ -68,10 +68,10 @@ uint8_t isSingle(const char c) {
 }
 
 uint8_t tokenCmpLiteral(token s, const char* lit){
-	for(uint8_t tIdx = 0; *lit != '\0'; tIdx++, lit++){
+	uint8_t tIdx = 0; for(; *lit != '\0'; tIdx++, lit++){
 		if(tIdx == s.len) return 0;
 		if(s.str[tIdx] != *lit) return 0;
-	} return 1;
+	} return tIdx == s.len;
 }
 
 char* src; token curToken;
@@ -972,6 +972,7 @@ uint8_t assembleSource(const char* src, const uint32_t progOrigin){
 		} persistentTokens.foundFlush = 0;
 		break;
 		case opToken:
+		persistentTokens.foundAllocation = 0;
 		const uint32_t curPrecedence = operatorPrecedence[curToken.subtype] + precedence;
 		if(previousToken.type == opToken) goto skipWhileParse;
 		if(persistentTokens.foundVolatile && curToken.subtype == opDereference) curToken.subtype = opDereferenceVolatile;
@@ -984,6 +985,7 @@ uint8_t assembleSource(const char* src, const uint32_t progOrigin){
 		} skipWhileParse:; operatorStack[operatorIdx++] = (operator){curToken.subtype, curPrecedence};
 		break;
 		case endLine:
+		persistentTokens.foundAllocation = 0;
 		for(int8_t idx = operatorIdx - 1; idx >= 0; idx--){
 			idx = combineOperators(idx);
 			if(numOperands(operatorStack[idx].subtype) > operandIdx){return unexpectedExpression;}
@@ -991,7 +993,7 @@ uint8_t assembleSource(const char* src, const uint32_t progOrigin){
 			operandIdx -= numOperands(operatorStack[idx].subtype);
 			operandStack[operandIdx++] = tmp;
 		}
-		//if(operandIdx > 1) return unexpectedExpression;
+		if(operandIdx > 1) return unexpectedExpression;
 		operatorIdx = 0; operandIdx = 0;
 		for(uint8_t r = 0; r < maxGPRegs; r++){
 			if(virtualRegFile[r].stackOffset > curStackOffset - curCompilerTempSz && virtualRegFile[r].stackOffset < curStackOffset){
@@ -1001,6 +1003,7 @@ uint8_t assembleSource(const char* src, const uint32_t progOrigin){
 		curStackOffset -= curCompilerTempSz; curCompilerTempSz = 0;
 		break;
 		case keywordToken:
+		persistentTokens.foundAllocation = 0;
 		switch(curToken.subtype){
 			case flushKey:
 			persistentTokens.foundFlush = 1; break;
@@ -1009,6 +1012,7 @@ uint8_t assembleSource(const char* src, const uint32_t progOrigin){
 			case volatileKey: persistentTokens.foundVolatile = 1; break;
 		} break;
 		case clampToken:
+		persistentTokens.foundAllocation = 0;
 		switch(curToken.subtype){
 			case parenthesesL: case parenthesesR:
 			precedence += (curToken.subtype == parenthesesL) * 16 - (curToken.subtype == parenthesesR) * 16;
@@ -1020,7 +1024,7 @@ uint8_t assembleSource(const char* src, const uint32_t progOrigin){
 				const operand tmp = assembleOp(operatorStack[idx], operandStack + operandIdx - 1, registerPermanence);
 				operandIdx -= numOperands(operatorStack[idx].subtype);
 				operandStack[operandIdx++] = tmp;
-			} if(operandIdx > 1) return unexpectedExpression;
+			}if(operandIdx > 1) return unexpectedExpression;
 			operatorIdx = 0;
 			switch(branchTypeFound){
 				case whileKey: relativeBranchOffsets[backpatchIdx] = progAddr;
@@ -1037,12 +1041,12 @@ uint8_t assembleSource(const char* src, const uint32_t progOrigin){
 					case stackVar:
 					operandStack[operandIdx++] = condition; operandStack[operandIdx] = (operand){0, 4, constant, 0, 0, registerPermanence};
 					assembleOp((operator){opCmpEqual, 0}, operandStack + operandIdx, registerPermanence); operandIdx -= 2;
-				}
+				} if(branchTypeFound == ifKey) relativeBranchOffsets[backpatchIdx] = progAddr;
+				relativeBranchOffsets[backpatchIdx] = condition.operandType == constant ? UINT32_MAX : relativeBranchOffsets[backpatchIdx];
 				break;
 			}
-			if(branchTypeFound == ifKey) relativeBranchOffsets[backpatchIdx] = progAddr;
 			registerPermanence += (branchTypeFound == whileKey) * 128;
-			emitOpcode(bc_imm_32); emitFlag(getOppositeFlag(virtualFlags.flagType)); emitArgument(4096, 12);
+			if(relativeBranchOffsets[backpatchIdx] != UINT32_MAX){emitOpcode(bc_imm_32); emitFlag(getOppositeFlag(virtualFlags.flagType)); emitArgument(4096, 12);}
 			snapshotStack[backpatchIdx] = getSnapshot(); incrementScope();
 			for(uint8_t r = 0; r < maxGPRegs; r++){
 				if(virtualRegFile[r].stackOffset > curStackOffset - curCompilerTempSz && virtualRegFile[r].stackOffset < curStackOffset){
@@ -1056,7 +1060,7 @@ uint8_t assembleSource(const char* src, const uint32_t progOrigin){
 			for(uint8_t r = 0; r < maxGPRegs; r++) if(virtualRegFile[r].stackOffset >= curStackOffset) virtualRegFile[r].dirty = empty;
 			restoreSnapshot(snapshotStack[backpatchIdx]);
 			if(branchTypeFound == whileKey){emitOpcode(b_imm_32); emitArgument(relativeBranchOffsets[backpatchIdx] - progAddr - 4, 16);}
-			printf("BACKPATCH %d\n", progAddr - relativeBranchOffsets[backpatchIdx] - 4); 
+			if(relativeBranchOffsets[backpatchIdx] != UINT32_MAX) printf("BACKPATCH %d\n", progAddr - relativeBranchOffsets[backpatchIdx] - 4); 
 			branchTypeFound = -1;
 		}
 		break;
