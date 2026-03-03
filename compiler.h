@@ -10,4 +10,4 @@ typedef enum{
 	userVarLimitExceeded
 }errorCodes;
 
-uint8_t assembleSource(const char* src, const uint32_t progOrigin);
+uint8_t assembleSource(const char* src, uint8_t* progOrigin);

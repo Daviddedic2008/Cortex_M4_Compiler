@@ -85,57 +85,41 @@ void nextToken(){
 	if(isSingle(*src)){src++; curToken.len++;}
 	else{while(!isNullChar(*src) && !isSingle(*src)){src++; curToken.len++;}}
 	switch(*(curToken.str)){
-		case '+': curToken.type = opToken; curToken.subtype = opAdd;break;
-		case '-': curToken.type = opToken; curToken.subtype = opSub;break;
-		case '*': curToken.type = opToken; curToken.subtype = opMul;break;
-		case '/': curToken.type = opToken; curToken.subtype = opDiv;break;
-		case '=': curToken.type = opToken; curToken.subtype = opEqual;break;
-		case '>': curToken.type = opToken; curToken.subtype = opCmpGreater;break;
-		case '<': curToken.type = opToken; curToken.subtype = opCmpLess;break;
-		case '|': curToken.type = opToken; curToken.subtype = opBitwiseOr;break;
-		case '&': curToken.type = opToken; curToken.subtype = opBitwiseAnd;break;
-		case '!': curToken.type = opToken; curToken.subtype = opBitwiseNot;break;
-		case '(': curToken.type = clampToken; curToken.subtype = parenthesesL;break;
-		case ')': curToken.type = clampToken; curToken.subtype = parenthesesR;break;
-		case '{': curToken.type = clampToken; curToken.subtype = curlyBL;break;
-		case '}': curToken.type = clampToken; curToken.subtype = curlyBR;break;
-		case ';': curToken.type = endLine; curToken.subtype = 0;break;
-		case 'r': if(tokenCmpLiteral(curToken, "ref")){curToken.type = opToken; curToken.subtype = opReference;}
-		else{curToken.type = identifierToken; curToken.subtype = 0;} break;
-		case 'd': if(tokenCmpLiteral(curToken, "deref")){curToken.type = opToken; curToken.subtype = opDereference;}
-		else if(tokenCmpLiteral(curToken, "decrement")){curToken.type = opToken; curToken.subtype = opDecrement;}
-		else{curToken.type = identifierToken; curToken.subtype = 0;} break;
-		case 'o': if(tokenCmpLiteral(curToken, "or")){curToken.type = opToken; curToken.subtype = opLogicalOr;}
-		else{curToken.type = identifierToken; curToken.subtype = 0;} break;
-		case 'a': if(tokenCmpLiteral(curToken, "and")){curToken.type = opToken; curToken.subtype = opLogicalAnd;}
-		else{curToken.type = identifierToken; curToken.subtype = 0;} break;
-		case 'n': if(tokenCmpLiteral(curToken, "not")){curToken.type = opToken; curToken.subtype = opLogicalNot;}
-		else{curToken.type = identifierToken; curToken.subtype = 0;} break;
-		case 'e': if(tokenCmpLiteral(curToken, "equals")){curToken.type = opToken; curToken.subtype = opCmpEqual;}
-		else{curToken.type = identifierToken; curToken.subtype = 0;} break;
-		case 'g': if(tokenCmpLiteral(curToken, "greater")){curToken.type = opToken; curToken.subtype = opCmpGreater;}
-		else{curToken.type = identifierToken; curToken.subtype = 0;} break;
-		case 'l': if(tokenCmpLiteral(curToken, "less")){curToken.type = opToken; curToken.subtype = opCmpLess;}
-		else{curToken.type = identifierToken; curToken.subtype = 0;} break;
-		case 'i': if(tokenCmpLiteral(curToken, "if")){curToken.type = keywordToken; curToken.subtype = ifKey;}
-		else if(tokenCmpLiteral(curToken, "in")){curToken.type = opToken; curToken.subtype = opDereferenceArr;}
-		else{curToken.type = identifierToken; curToken.subtype = 0;} break;
-		case 'c': if(tokenCmpLiteral(curToken, "continue")){curToken.type = keywordToken; curToken.subtype = continueKey;}
-		else{curToken.type = identifierToken; curToken.subtype = 0;} break;
-		case 'b': if(tokenCmpLiteral(curToken, "break")){curToken.type = keywordToken; curToken.subtype = breakKey;}
-		else{curToken.type = identifierToken; curToken.subtype = 0;} break;
-		case 'f': if(tokenCmpLiteral(curToken, "flush")){curToken.type = keywordToken; curToken.subtype = flushKey;}
-		else if(tokenCmpLiteral(curToken, "free")){curToken.type = opToken; curToken.subtype = opFree;}
-		else{curToken.type = identifierToken; curToken.subtype = 0;} break;
-		case 'v': if(tokenCmpLiteral(curToken, "volatile")){curToken.type = keywordToken; curToken.subtype = volatileKey;}
-		else{curToken.type = identifierToken; curToken.subtype = 0;} break;
-		case 'w': if(tokenCmpLiteral(curToken, "while")){curToken.type = keywordToken; curToken.subtype = whileKey;}
-		else if(tokenCmpLiteral(curToken, "word")){curToken.type = sizeToken; curToken.subtype = 0;}
-		else{curToken.type = identifierToken; curToken.subtype = 0;} break;
-		default:
-		if(*(curToken.str) >= '0' && *(curToken.str) < '9'){curToken.type = constantToken; curToken.subtype = 0;}
-		else{curToken.type = identifierToken; curToken.subtype = 0;}
-	}	
+		case '+': curToken.type = opToken; curToken.subtype = opAdd;return;
+		case '-': curToken.type = opToken; curToken.subtype = opSub;return;
+		case '*': curToken.type = opToken; curToken.subtype = opMul;return;
+		case '/': curToken.type = opToken; curToken.subtype = opDiv;return;
+		case '=': curToken.type = opToken; curToken.subtype = opEqual;return;
+		case '>': curToken.type = opToken; curToken.subtype = opCmpGreater;return;
+		case '<': curToken.type = opToken; curToken.subtype = opCmpLess;return;
+		case '|': curToken.type = opToken; curToken.subtype = opBitwiseOr;return;
+		case '&': curToken.type = opToken; curToken.subtype = opBitwiseAnd;return;
+		case '!': curToken.type = opToken; curToken.subtype = opBitwiseNot;return;
+		case '(': curToken.type = clampToken; curToken.subtype = parenthesesL;return;
+		case ')': curToken.type = clampToken; curToken.subtype = parenthesesR;return;
+		case '{': curToken.type = clampToken; curToken.subtype = curlyBL;return;
+		case '}': curToken.type = clampToken; curToken.subtype = curlyBR;return;
+		case ';': curToken.type = endLine; curToken.subtype = 0; return;
+		case 'r': if(tokenCmpLiteral(curToken, "ref")){curToken.type = opToken; curToken.subtype = opReference; return;} break;
+		case 'd': if(tokenCmpLiteral(curToken, "deref")){curToken.type = opToken; curToken.subtype = opDereference; return;}
+		else if(tokenCmpLiteral(curToken, "decrement")){curToken.type = opToken; curToken.subtype = opDecrement; return;} break;
+		case 'o': if(tokenCmpLiteral(curToken, "or")){curToken.type = opToken; curToken.subtype = opLogicalOr; return;} break;
+		case 'a': if(tokenCmpLiteral(curToken, "and")){curToken.type = opToken; curToken.subtype = opLogicalAnd; return;} break;
+		case 'n': if(tokenCmpLiteral(curToken, "not")){curToken.type = opToken; curToken.subtype = opLogicalNot; return;} break;
+		case 'e': if(tokenCmpLiteral(curToken, "equals")){curToken.type = opToken; curToken.subtype = opCmpEqual; return;} break;
+		case 'g': if(tokenCmpLiteral(curToken, "greater")){curToken.type = opToken; curToken.subtype = opCmpGreater; return;} break;
+		case 'l': if(tokenCmpLiteral(curToken, "less")){curToken.type = opToken; curToken.subtype = opCmpLess; return;} break;
+		case 'i': if(tokenCmpLiteral(curToken, "if")){curToken.type = keywordToken; curToken.subtype = ifKey; return;}
+		else if(tokenCmpLiteral(curToken, "in")){curToken.type = opToken; curToken.subtype = opDereferenceArr; return;} break;
+		case 'c': if(tokenCmpLiteral(curToken, "continue")){curToken.type = keywordToken; curToken.subtype = continueKey; return;} break;
+		case 'b': if(tokenCmpLiteral(curToken, "break")){curToken.type = keywordToken; curToken.subtype = breakKey; return;} break;
+		case 'f': if(tokenCmpLiteral(curToken, "flush")){curToken.type = keywordToken; curToken.subtype = flushKey; return;}
+		else if(tokenCmpLiteral(curToken, "free")){curToken.type = opToken; curToken.subtype = opFree; return;} break;
+		case 'v': if(tokenCmpLiteral(curToken, "volatile")){curToken.type = keywordToken; curToken.subtype = volatileKey; return;} break;
+		case 'w': if(tokenCmpLiteral(curToken, "while")){curToken.type = keywordToken; curToken.subtype = whileKey; return;}
+		else if(tokenCmpLiteral(curToken, "word")){curToken.type = sizeToken; curToken.subtype = 0; return;} break;
+	} if(*(curToken.str) >= '0' && *(curToken.str) < '9'){curToken.type = constantToken; curToken.subtype = 0; return;}
+	curToken.type = identifierToken;
 }
 
 //#############################################################################################################################################
@@ -539,7 +523,7 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 			if(wIdx >= num32BitTransfers) {const uint8_t r = moveConstantToRegs(0, o1.val.stackOffset + wIdx * 4, registerPermanence); virtualRegFile[r].dirty = dirty; goto skipWriteback;}
 			uint8_t r; switch(o2.operandType){
 				case constant:
-				virtualRegFile[r = moveConstantToRegs(o2.val.value, o1.val.stackOffset + wIdx * 4, UINT16_MAX)].dirty = dirty;
+				virtualRegFile[r = moveConstantToRegs(o2.val.value, o1.val.stackOffset + wIdx * 4, registerPermanence)].dirty = dirty;
 				goto skipWriteback;
 				case stackVar:
 				r = moveOffsetToRegs(o2.val.stackOffset + wIdx * 4, o2.val.stackOffset + wIdx * 4, registerPermanence);
@@ -711,7 +695,7 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 		const uint32_t num32BitAdds = ((o1.size > o2.size ? o1.size : o2.size) + 3) >> 2;
 		for(uint32_t wIdx = 0; wIdx < num32BitAdds; wIdx++){
 			int64_t constantInAdd = -1; int8_t r1 = -1; uint8_t r1d, r2d;
-			r1 = moveOffsetToRegs(o1.val.stackOffset + wIdx * 4, o1.val.stackOffset + wIdx * 4, o1.registerPreference);
+			r1 = moveOffsetToRegs(o1.val.stackOffset + wIdx * 4, o1.val.stackOffset + wIdx * 4, registerPermanence);
 			r1d = virtualRegFile[r1].dirty; virtualRegFile[r1].dirty = locked; int8_t r2 = -1;
 			switch(o2.operandType){
 				case constant:
@@ -816,7 +800,7 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 		switch(o1.operandType){
 			case constant: constantInMul = o1.val.value; break;
 			case stackVar: r1 = moveOffsetToRegs(o1.val.stackOffset, o1.val.stackOffset, registerPermanence);
-			r1d = virtualRegFile[r1].dirty = locked;
+			r1d = virtualRegFile[r1].dirty; virtualRegFile[r1].dirty = locked;
 		} switch(o2.operandType){
 			case constant: if(constantInMul != -1) return (operand){evalImm(constantInMul, o2.val.value, op.subtype), 4, constant, 0, 0, registerPermanence};
 			constantInMul = o2.val.value; break;
@@ -827,8 +811,19 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 			}
 			else{
 				r2 = moveOffsetToRegs(o2.val.stackOffset, o2.val.stackOffset, registerPermanence);
-				r2d = virtualRegFile[r2].dirty; virtualRegFile[r2].dirty = locked;
+				r2d = virtualRegFile[r2].dirty;
 			}
+		}
+		const uint32_t stackOffCheck = curStackOffset + (curCompilerTempSz == 0);
+		if(constantInMul != -1) r2 = moveConstantToRegs(constantInMul, curStackOffset - curCompilerTempSz, UINT16_MAX);
+		if(virtualRegFile[r2].stackOffset >= curStackOffset - curCompilerTempSz && virtualRegFile[r2].stackOffset < stackOffCheck) virtualRegFile[r2].dirty = empty;
+		else virtualRegFile[r2].dirty = r2d;
+		if(virtualRegFile[r1].stackOffset >= curStackOffset - curCompilerTempSz && virtualRegFile[r1].stackOffset < stackOffCheck) virtualRegFile[r1].dirty = empty;
+		else virtualRegFile[r1].dirty = r1d;
+		const uint8_t resultReg = getEmptyRegister(curStackOffset, registerPermanence, noCheck); virtualRegFile[resultReg].dirty = dirty;
+		emitOpcode(op.subtype == opMul ? mulw_reg_32 : divw_reg_32); emitArgument(resultReg, 4); emitArgument(r1, 4); emitArgument(r2, 4);
+		curStackOffset += 4; curCompilerTempSz += 4;
+		return (operand){curStackOffset - 4, 4, stackVar, 0, 0, registerPermanence};	
 		}
 		case opScaleM: case opScaleD:{
 		o2 = *operands, o1 = *(operands - 1);
@@ -841,23 +836,22 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 			r2 = moveOffsetToRegs(o2.val.stackOffset, o2.val.stackOffset, registerPermanence);
 			r2d = virtualRegFile[r2].dirty; 
 		} virtualRegFile[r2].dirty = locked;
-		virtualRegFile[r1].dirty = r1d;
-		if(virtualRegFile[r2].stackOffset >= curStackOffset - curCompilerTempSz && virtualRegFile[r2].stackOffset < curStackOffset) virtualRegFile[r2].dirty = empty;
-		if(virtualRegFile[r1].dirty == locked) virtualRegFile[r1].dirty = r1d; if(virtualRegFile[r2].dirty == locked) virtualRegFile[r2].dirty = r2d;
+		const uint32_t stackOffCheck = curStackOffset + (curCompilerTempSz == 0);
+		if(virtualRegFile[r2].stackOffset >= curStackOffset - curCompilerTempSz && virtualRegFile[r2].stackOffset < stackOffCheck) virtualRegFile[r2].dirty = empty;
+		virtualRegFile[r1].dirty = dirty; if(virtualRegFile[r2].dirty == locked) virtualRegFile[r2].dirty = r2d;
 		emitOpcode(op.subtype == opScaleM ? mulw_reg_32 : divw_reg_32); emitArgument(r1, 4); emitArgument(r1, 4); emitArgument(r2, 4);
 		curStackOffset += 4;
 		return (operand){curStackOffset - 4, 4, stackVar, 0, 0, registerPermanence};	
 		}
-	}
 	}
 }
 
 //#############################################################################################################################################
 // EXPRESSION PARSER
 
-#define maxOperatorDepth 128
-#define maxOperands 256
-#define maxBranchDepth 64
+#define maxOperatorDepth 64
+#define maxOperands 128
+#define maxBranchDepth 32
 
 // comments for clarity here, sorry for the confusion with precedences.
 const uint8_t operatorPrecedence[] = { 
@@ -893,8 +887,22 @@ forceinline void restoreSnapshot(const registerSnapshot snapshot){
 	}
 }
 
-registerSnapshot snapshotStack[maxBranchDepth]; uint32_t relativeBranchOffsets[maxBranchDepth];
+registerSnapshot snapshotStack[maxBranchDepth]; uint32_t relativeDirectBranchOffsets[maxBranchDepth];
 operator operatorStack[maxOperatorDepth]; operand operandStack[maxOperands];
+
+forceinline void backpatch(const uint32_t addressToPatch, const uint32_t memoryOffset, uint8_t* progOrigin){
+	const uint32_t trueJump = progAddr - addressToPatch - 4;
+	progOrigin[addressToPatch] = trueJump;
+}
+
+#define breakLimit 16
+typedef struct{
+	uint32_t breakAddrs[breakLimit]; uint8_t numBreaks;
+	uint32_t continueAddrs[breakLimit]; uint8_t numContinues;
+	uint32_t directCompilerAddr;
+}relativeLoopOffset;
+#define emptyLoopOffset (relativeLoopOffset){.numBreaks = 0}
+relativeLoopOffset relativeLoopBlocks[maxBranchDepth];
 
 forceinline uint8_t combineOperators(uint8_t opIdx){
 	if(opIdx == 0) return 0;
@@ -938,7 +946,7 @@ typedef struct{
 }persistentToken;
 #pragma pack(pop, 1)
 
-uint8_t assembleSource(const char* src, const uint32_t progOrigin){
+uint8_t assembleSource(const char* src, uint8_t* progOrigin){
 	initializeVirtualFlags(); initializeVirtualRegs(); curScope = 0; progAddr = 0;
 	setSource(src); int8_t branchTypeFound = -1;
 	uint8_t operatorIdx = 0, operandIdx = 0;
@@ -967,7 +975,7 @@ uint8_t assembleSource(const char* src, const uint32_t progOrigin){
 			const variableMetadata v = addVariable(curToken.str, curToken.len, allocationSz);
 			operandStack[operandIdx++] = (operand){v.stackOffset, allocationSz, stackVar, 0, persistentTokens.foundFlush, registerPermanence};
 		} else{
-			const variableMetadata v = retrieveLocalVariable(curToken.str, curToken.len);
+			const variableMetadata v = retrieveLocalVariable(curToken.str, curToken.len); if(v.name == (void*)0) return undefinedVariable;
 			operandStack[operandIdx++] = (operand){v.stackOffset, v.size, stackVar, 0, persistentTokens.foundFlush, registerPermanence};
 		} persistentTokens.foundFlush = 0;
 		break;
@@ -1027,7 +1035,7 @@ uint8_t assembleSource(const char* src, const uint32_t progOrigin){
 			}if(operandIdx > 1) return unexpectedExpression;
 			operatorIdx = 0;
 			switch(branchTypeFound){
-				case whileKey: relativeBranchOffsets[backpatchIdx] = progAddr;
+				case whileKey: relativeDirectBranchOffsets[backpatchIdx] = progAddr;
 				case ifKey: const operand condition = operandStack[--operandIdx];
 				switch(condition.operandType){
 					case flagVar: operandIdx = 0; operatorIdx = 0;
@@ -1041,12 +1049,12 @@ uint8_t assembleSource(const char* src, const uint32_t progOrigin){
 					case stackVar:
 					operandStack[operandIdx++] = condition; operandStack[operandIdx] = (operand){0, 4, constant, 0, 0, registerPermanence};
 					assembleOp((operator){opCmpEqual, 0}, operandStack + operandIdx, registerPermanence); operandIdx -= 2;
-				} if(branchTypeFound == ifKey) relativeBranchOffsets[backpatchIdx] = progAddr;
-				relativeBranchOffsets[backpatchIdx] = condition.operandType == constant ? UINT32_MAX : relativeBranchOffsets[backpatchIdx];
+				} if(branchTypeFound == ifKey) relativeDirectBranchOffsets[backpatchIdx] = progAddr;
+				relativeDirectBranchOffsets[backpatchIdx] = condition.operandType == constant ? UINT32_MAX : relativeDirectBranchOffsets[backpatchIdx];
 				break;
 			}
 			registerPermanence += (branchTypeFound == whileKey) * 128;
-			if(relativeBranchOffsets[backpatchIdx] != UINT32_MAX){emitOpcode(bc_imm_32); emitFlag(getOppositeFlag(virtualFlags.flagType)); emitArgument(4096, 12);}
+			if(relativeDirectBranchOffsets[backpatchIdx] != UINT32_MAX){emitOpcode(bc_imm_32); emitFlag(getOppositeFlag(virtualFlags.flagType)); emitArgument(4096, 12);}
 			snapshotStack[backpatchIdx] = getSnapshot(); incrementScope();
 			for(uint8_t r = 0; r < maxGPRegs; r++){
 				if(virtualRegFile[r].stackOffset > curStackOffset - curCompilerTempSz && virtualRegFile[r].stackOffset < curStackOffset){
@@ -1059,13 +1067,15 @@ uint8_t assembleSource(const char* src, const uint32_t progOrigin){
 			decrementScope(); 
 			for(uint8_t r = 0; r < maxGPRegs; r++) if(virtualRegFile[r].stackOffset >= curStackOffset) virtualRegFile[r].dirty = empty;
 			restoreSnapshot(snapshotStack[backpatchIdx]);
-			if(branchTypeFound == whileKey){emitOpcode(b_imm_32); emitArgument(relativeBranchOffsets[backpatchIdx] - progAddr - 4, 16);}
-			if(relativeBranchOffsets[backpatchIdx] != UINT32_MAX) printf("BACKPATCH %d\n", progAddr - relativeBranchOffsets[backpatchIdx] - 4); 
+			if(branchTypeFound == whileKey){emitOpcode(b_imm_32); emitArgument(relativeDirectBranchOffsets[backpatchIdx] - progAddr - 4, 16);}
+			if(relativeDirectBranchOffsets[backpatchIdx] != UINT32_MAX) printf("BACKPATCH %d\n", progAddr - relativeDirectBranchOffsets[backpatchIdx] - 4); 
+			backpatch(relativeDirectBranchOffsets[backpatchIdx], progAddr, progOrigin);
 			branchTypeFound = -1;
 		}
 		break;
 		}
-		previousToken = curToken;
+		if(curToken.type != nullToken) previousToken = curToken;
 	}while(curToken.type != nullToken);
+	if(precedence || curScope || (previousToken.type != endLine && !(previousToken.type == clampToken && previousToken.subtype == curlyBR))) return delimiterMismatch;
 	return noError;
 }
