@@ -31,7 +31,9 @@ enum tokenType {
 };
 
 enum opSubtype {
-	opAdd, opSub, opIncrement, opDecrement, opMul, opScaleM, opDiv, opScaleD, opEqual, opFree, opReference, opWriteback, opWritebackArr, opDereferenceArr,
+	opAdd, opSub, opIncrement, opDecrement, opMul, opScaleM, opDiv, opScaleD, 
+	opRightShift, opLeftShift,
+	opEqual, opFree, opReference, opWriteback, opWritebackArr, opDereferenceArr,
 	opDereference, opBitwiseOr, opBitwiseAnd, opBitwiseNot, opBitwiseXor, opLogicalAnd,
 	opLogicalOr, opLogicalNot, opCmpGreater, opCmpLess, opCmpEqual, opCmpGEqual, opCmpNEqual, opCmpLEqual,
 	opDereferenceVolatile, opWritebackVolatile
@@ -90,8 +92,8 @@ void nextToken(){
 		case '*': curToken.type = opToken; curToken.subtype = opMul;return;
 		case '/': curToken.type = opToken; curToken.subtype = opDiv;return;
 		case '=': curToken.type = opToken; curToken.subtype = opEqual;return;
-		case '>': curToken.type = opToken; curToken.subtype = opCmpGreater;return;
-		case '<': curToken.type = opToken; curToken.subtype = opCmpLess;return;
+		case '>': curToken.type = opToken; curToken.subtype = opRightShift;return;
+		case '<': curToken.type = opToken; curToken.subtype = opLeftShift;return;
 		case '|': curToken.type = opToken; curToken.subtype = opBitwiseOr;return;
 		case '&': curToken.type = opToken; curToken.subtype = opBitwiseAnd;return;
 		case '!': curToken.type = opToken; curToken.subtype = opBitwiseNot;return;
@@ -134,7 +136,7 @@ typedef enum opcode {
 	movw_reg_reg_32, movw_lit_32, movt_lit_32, 
 	ldrw_imm_32, strw_imm_32, ldrw_reg_32, strw_reg_32,
 	subw_imm_32, addw_imm_32, subw_reg_32, addw_reg_32,
-	subs_imm_32, subs_reg_32,
+	subs_imm_32, subs_reg_32, lsr_imm_32, lsl_imm_32, lsr_reg_32, lsl_reg_32,
 	mulw_reg_32, divw_reg_32, ite_32, it_32,
 	cmp_reg_32, cmp_imm_32, 
 	eors_reg_32, eors_imm_32, orrs_reg_32, andw_imm_32, andw_reg_32, orrs_imm_32,
@@ -183,6 +185,10 @@ void emitOpcode(const uint8_t code) {
 	case subs_imm_32:    printf("SUBS_IMM_32"); break;
 	case andw_imm_32: 	 printf("ANDW_IMM_32"); break;
 	case andw_reg_32: 	 printf("ANDW_REG_32"); break;
+	case lsr_imm_32:	 printf("LSR_IMM_32"); break;
+	case lsl_imm_32:	 printf("LSL_IMM_32"); break;
+	case lsl_reg_32:	 printf("LSL_REG_32"); break;
+	case lsr_reg_32:	 printf("LSR_REG_32"); break;
 	case cmp_imm_32: 	 printf("CMP_IMM_32"); break;
 	case cmp_reg_32: 	 printf("CMP_REG_32"); break;
 	case ite_32:		 printf("ITE_32"); break;
@@ -856,7 +862,7 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 // comments for clarity here, sorry for the confusion with precedences.
 const uint8_t operatorPrecedence[] = { 
     4, 4, 1, 1, 5, 1, 5, 1, // Add, Sub, Inc, Dec, Mul, scaleMul, Div, scaleDiv
-    1, 1,          // Equal (Assignment), Free (Manual register management shi)
+    5, 5, 1, 1,          // Right Shift, Left Shift, Equal (Assignment), Free (Manual register management shi)
     8, 8, 8, 8, 8,    // Reference(Unary), Writeback, Dereference, Array Writeback, Array Dereference
     4, 4, 8, 4, // Bitwise: Or, And, Not(Unary), Xor
     2, 2, 8,    // Logical: And, Or, Not(Unary)

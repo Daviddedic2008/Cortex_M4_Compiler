@@ -157,6 +157,21 @@ x /= 5; // scales x by 1/5
 
 ```
 
+### LOGICAL AND, LOGICAL OR, ADD, SUB
+
+These operators do what you would expect, and also work with variables of any size.
+
+```rust
+// [val1] +/-/&/| [val2]
+// in all cases [val1] and [val2] can be anything
+word x = 5; word y = 5;
+word z = x + 5; // self explanatory
+word x2 = x | y + x & y; // self explanatory
+word 2 a = 5; word 2 b = 7;
+word 2 z = (a & 5) + b; // also works!
+
+```
+
 ---
 
 ## Condition Evaluation
