@@ -34,7 +34,7 @@ if exist "build\CortexM4Compiler.exe" (
 	if !EXIT_CODE! equ !DEL_ERR! (
     echo %RED%[ERROR] Compilation failed. Delimiter mismatch.%RESET%
 	)
-	if !EXIT_CODE! equ !undef_ERR! (
+	if !EXIT_CODE! equ !UNDEF_ERR! (
     echo %RED%[ERROR] Compilation failed. Undefined variable.%RESET%
 	)
 	if !EXIT_CODE! equ !OP_DEPTH_ERR! (

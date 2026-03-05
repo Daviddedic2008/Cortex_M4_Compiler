@@ -893,7 +893,8 @@ forceinline void restoreSnapshot(const registerSnapshot snapshot){
 	}
 }
 
-registerSnapshot snapshotStack[maxBranchDepth]; uint32_t relativeDirectBranchOffsets[maxBranchDepth];
+registerSnapshot snapshotStack[maxBranchDepth]; uint8_t snapshotIdx = 0;
+uint32_t relativeDirectBranchOffsets[maxBranchDepth]; uint8_t directBranchIdx = 0;
 operator operatorStack[maxOperatorDepth]; operand operandStack[maxOperands];
 
 forceinline void backpatch(const uint32_t addressToPatch, const uint32_t memoryOffset, uint8_t* progOrigin){
@@ -901,14 +902,14 @@ forceinline void backpatch(const uint32_t addressToPatch, const uint32_t memoryO
 	progOrigin[addressToPatch] = trueJump;
 }
 
-#define breakLimit 16
+#define branchKeywordLimit 16
 typedef struct{
-	uint32_t breakAddrs[breakLimit]; uint8_t numBreaks;
-	uint32_t continueAddrs[breakLimit]; uint8_t numContinues;
-	uint32_t directCompilerAddr;
+	uint32_t breakAddrs[branchKeywordLimit]; uint8_t numBreaks;
+	uint32_t continueAddrs[branchKeywordLimit]; uint8_t numContinues;
+	uint32_t jumpbackAddr;
 }relativeLoopOffset;
 #define emptyLoopOffset (relativeLoopOffset){.numBreaks = 0}
-relativeLoopOffset relativeLoopBlocks[maxBranchDepth];
+relativeLoopOffset relativeLoopBlocks[maxBranchDepth]; uint8_t relativeLoopIdx = 0;
 
 forceinline uint8_t combineOperators(uint8_t opIdx){
 	if(opIdx == 0) return 0;
@@ -932,16 +933,28 @@ forceinline uint8_t combineOperators(uint8_t opIdx){
 	return opIdx;
 }
 
-uint8_t backpatchIdx = 0;
 void decrementScope(){
-	curScope--; backpatchIdx--; if (variableIdx == 0) { goto stripTemporaries; }
+	curScope--; if (variableIdx == 0) { goto stripTemporaries; }
 	for (variableMetadata* v = variableBuffer + variableIdx - 1; v >= variableBuffer && v->scope > curScope; v--) {
 		variableIdx--;
 		curStackOffset -= v->size;
 	} stripTemporaries:;
 	curStackOffset -= curCompilerTempSz; curCompilerTempSz = 0;
 }
-forceinline void incrementScope(){curScope++; backpatchIdx++;}
+forceinline void decrementScopeKey(const uint8_t keyType){
+	decrementScope(); switch(keyType){
+	case ifKey: directBranchIdx--; break;
+	case whileKey: relativeLoopIdx--;
+	}
+}
+
+forceinline void incrementScope(){curScope++;}
+forceinline void incrementScopeKey(const uint8_t keyType){
+	incrementScope(); switch(keyType){
+	case ifKey: directBranchIdx++; break;
+	case whileKey: relativeLoopIdx++;
+	}
+}
 
 #pragma pack(push, 1)
 typedef struct{
@@ -1024,6 +1037,9 @@ uint8_t assembleSource(const char* src, uint8_t* progOrigin){
 			case ifKey: case whileKey:
 			branchTypeFound = curToken.subtype; break;
 			case volatileKey: persistentTokens.foundVolatile = 1; break;
+			case continueKey: emitOpcode(b_imm_32); emitArgument(4096, 12);
+			relativeLoopBlocks[relativeLoopIdx].continueAddrs[relativeLoopBlocks[relativeLoopIdx].numContinues] = progAddr;
+			relativeLoopBlocks[relativeLoopIdx-1].numContinues++; break;
 		} break;
 		case clampToken:
 		persistentTokens.foundAllocation = 0;
@@ -1041,7 +1057,7 @@ uint8_t assembleSource(const char* src, uint8_t* progOrigin){
 			}if(operandIdx > 1) return unexpectedExpression;
 			operatorIdx = 0;
 			switch(branchTypeFound){
-				case whileKey: relativeDirectBranchOffsets[backpatchIdx] = progAddr;
+				case whileKey: relativeLoopBlocks[relativeLoopIdx].jumpbackAddr = progAddr; snapshotStack[snapshotIdx] = getSnapshot();
 				case ifKey: const operand condition = operandStack[--operandIdx];
 				switch(condition.operandType){
 					case flagVar: operandIdx = 0; operatorIdx = 0;
@@ -1055,27 +1071,40 @@ uint8_t assembleSource(const char* src, uint8_t* progOrigin){
 					case stackVar:
 					operandStack[operandIdx++] = condition; operandStack[operandIdx] = (operand){0, 4, constant, 0, 0, registerPermanence};
 					assembleOp((operator){opCmpEqual, 0}, operandStack + operandIdx, registerPermanence); operandIdx -= 2;
-				} if(branchTypeFound == ifKey) relativeDirectBranchOffsets[backpatchIdx] = progAddr;
-				relativeDirectBranchOffsets[backpatchIdx] = condition.operandType == constant ? UINT32_MAX : relativeDirectBranchOffsets[backpatchIdx];
+				} if(branchTypeFound == ifKey) relativeDirectBranchOffsets[directBranchIdx] = progAddr;
+				relativeDirectBranchOffsets[directBranchIdx] = condition.operandType == constant ? UINT32_MAX : relativeDirectBranchOffsets[directBranchIdx];
 				break;
 			}
 			registerPermanence += (branchTypeFound == whileKey) * 128;
-			if(relativeDirectBranchOffsets[backpatchIdx] != UINT32_MAX){emitOpcode(bc_imm_32); emitFlag(getOppositeFlag(virtualFlags.flagType)); emitArgument(4096, 12);}
-			snapshotStack[backpatchIdx] = getSnapshot(); incrementScope();
+			emitOpcode(bc_imm_32); emitFlag(getOppositeFlag(virtualFlags.flagType)); emitArgument(4096, 12);
+			if(branchTypeFound == ifKey) snapshotStack[snapshotIdx] = getSnapshot(); incrementScopeKey(branchTypeFound);
 			for(uint8_t r = 0; r < maxGPRegs; r++){
 				if(virtualRegFile[r].stackOffset > curStackOffset - curCompilerTempSz && virtualRegFile[r].stackOffset < curStackOffset){
 					virtualRegFile[r].dirty = empty;
 				}
 			}
-			curStackOffset -= curCompilerTempSz; curCompilerTempSz = 0;
+			curStackOffset -= curCompilerTempSz; curCompilerTempSz = 0; snapshotIdx++;
+			switch(branchTypeFound){case ifKey: directBranchIdx++; break; case whileKey: relativeLoopIdx++;}
 			break;
 			case curlyBR:
-			decrementScope(); 
+			decrementScope(); snapshotIdx--;
 			for(uint8_t r = 0; r < maxGPRegs; r++) if(virtualRegFile[r].stackOffset >= curStackOffset) virtualRegFile[r].dirty = empty;
-			restoreSnapshot(snapshotStack[backpatchIdx]);
-			if(branchTypeFound == whileKey){emitOpcode(b_imm_32); emitArgument(relativeDirectBranchOffsets[backpatchIdx] - progAddr - 4, 16);}
-			if(relativeDirectBranchOffsets[backpatchIdx] != UINT32_MAX) printf("BACKPATCH %d\n", progAddr - relativeDirectBranchOffsets[backpatchIdx] - 4); 
-			backpatch(relativeDirectBranchOffsets[backpatchIdx], progAddr, progOrigin);
+			uint32_t backpatchAddr; switch(branchTypeFound){
+				case ifKey:
+				directBranchIdx--; backpatchAddr = relativeDirectBranchOffsets[directBranchIdx];
+				break;
+				case whileKey:
+				relativeLoopIdx--; backpatchAddr = relativeLoopBlocks[relativeLoopIdx].jumpbackAddr + 4;
+				for(uint8_t c = 0; c < relativeLoopBlocks[relativeLoopIdx].numContinues; c++){
+					printf("BACKPATCH CONTINUE\nLOCATION: %d  DATA: %d\n", relativeLoopBlocks[relativeLoopIdx].continueAddrs[c], backpatchAddr);
+				}
+				break;
+				
+			}
+			restoreSnapshot(snapshotStack[snapshotIdx]);
+			if(branchTypeFound == whileKey){emitOpcode(b_imm_32); emitArgument((backpatchAddr - 4) - progAddr - 4, 16);}
+			if(relativeDirectBranchOffsets[directBranchIdx] != UINT32_MAX) printf("BACKPATCH %d\n", progAddr - backpatchAddr - 4); 
+			backpatch(backpatchAddr, progAddr, progOrigin);
 			branchTypeFound = -1;
 		}
 		break;
