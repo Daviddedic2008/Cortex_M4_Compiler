@@ -382,6 +382,9 @@ uint8_t moveFlagToRegs(const uint32_t stackOffsetLoad, const uint32_t stackOffse
 forceinline void flushFlags(){
 	if(virtualFlags.dirty != empty) moveFlagToRegs(virtualFlags.stackOffset, virtualFlags.stackOffset, virtualFlags.flagType, UINT16_MAX);
 }
+forceinline void emptyFlags(){
+	virtualFlags.dirty = empty;
+}
 
 uint8_t moveOffsetToRegsFromRegister(const uint8_t loadRegister, const uint32_t stackOffsetStore, const uint16_t priority){
 	uint16_t lowestPriority = UINT16_MAX; uint8_t foundEmpty = 0; uint8_t flushIdx = 0;
@@ -1073,6 +1076,7 @@ uint8_t assembleSource(const char* src, uint8_t* progOrigin){
 					assembleOp((operator){opCmpEqual, 0}, operandStack + operandIdx, registerPermanence); operandIdx -= 2;
 				} if(branchTypeFound == ifKey) relativeDirectBranchOffsets[directBranchIdx] = progAddr;
 				relativeDirectBranchOffsets[directBranchIdx] = condition.operandType == constant ? UINT32_MAX : relativeDirectBranchOffsets[directBranchIdx];
+				emptyFlags();
 				break;
 			}
 			registerPermanence += (branchTypeFound == whileKey) * 128;
