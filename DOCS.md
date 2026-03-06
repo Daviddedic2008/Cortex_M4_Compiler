@@ -21,7 +21,7 @@ Now, here's the actual documentation:
 
 Variables are statically sized(not really typed). They can be sized to multiples of 32 bit words. Each declaration automatically allocates stack space for said variable. Variables that are one word can live in registers, while bigger variables are treated as write-through. Therefore, use one word variables for values that must stay in registers to be accessed easily.
 
-```python
+```rust
 // word [count] name = value;
 // [count] must be a constant. It is optional. No [count] will default to size of one word
 // [count] is optional, compiler defaults size to one word
