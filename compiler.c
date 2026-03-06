@@ -141,7 +141,7 @@ typedef enum opcode {
 	cmp_reg_32, cmp_imm_32, 
 	eors_reg_32, eors_imm_32, orrs_reg_32, andw_imm_32, andw_reg_32, orrs_imm_32,
 	mvn_imm_32, mvn_reg_32, b_imm_32, bc_imm_32,
-	b_imm_16, bc_imm_16, mov_lit_16, ldr_imm_16, ldr_gpr_imm_16, str_imm_16, mov_reg_reg_16
+	b_imm_16, bc_imm_16, mov_lit_16, ldr_imm_16, ldr_gpr_imm_16, str_imm_16, mov_reg_reg_16, add_reg_16
 }opcode;
 
 #define lim32 bc_imm_32
@@ -175,6 +175,7 @@ void emitOpcode(const uint8_t code) {
 	case addw_imm_32:    printf("ADDW_IMM_32"); break;
 	case subw_reg_32:    printf("SUBW_REG_32"); break;
 	case addw_reg_32:    printf("ADDW_REG_32"); break;
+	case add_reg_16:     printf("ADD_REG_16"); break;
 	case mulw_reg_32:    printf("MULW_REG_32"); break;
 	case divw_reg_32:    printf("DIVW_REG_32"); break;
 	case eors_imm_32:	 printf("EORS_IMM_32"); break;
@@ -280,7 +281,7 @@ forceinline void storeRegisterIntoStackRAbs(const uint8_t reg, const uint8_t reg
 }
 forceinline void storeRegisterIntoStackR(const uint8_t reg, const uint8_t reg2) {
 	emitOpcode(strw_reg_32); emitArgument(stackPointerReg, 4); emitArgument(reg, 4);
-	emitArgument(reg2, 4);
+	emitArgument(reg2, 4); //kedaar was here
 }
 void loadRegisterFromStack(const uint8_t reg, const uint32_t stackOffset) {
 	if (stackOffset >= 4095) {
@@ -656,6 +657,37 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 		curStackOffset += o1.val.value * 4; curCompilerTempSz += o1.val.value * 4;
 		return (operand){curStackOffset - o1.val.value * 4, o1.val.value * 4, stackVar, 0, 0, registerPermanence};
 		}
+		case opWritebackArr:{
+		int8_t addrReg = -1;  uint32_t addrConst;
+		const operand o4 = *operands; const operand o3 = *(operands - 1); o2 = *(operands - 2); o1 = *(operands - 3);
+		// 1 in arr 0 = 5;
+		uint32_t baseWbAddr = o2.val.stackOffset; int8_t offsetRegister = -1;
+		switch(o3.operandType){
+			case constant: baseWbAddr = o3.val.value; break;
+			case stackVar: offsetRegister = moveOffsetToRegs(o3.val.stackOffset, o3.val.stackOffset, registerPermanence); virtualRegFile[offsetRegister].dirty = locked;
+			if(o1.val.value - 1){emitOpcode(subw_reg_32); emitArgument(offsetRegister, 4); emitArgument(stackPointerReg, 4); emitArgument(offsetRegister, 4);}
+		} for(uint32_t wIdx = 0; wIdx < o1.val.value; wIdx++){
+			uint8_t readReg; switch(o4.operandType){
+				case constant: readReg = moveConstantToRegs(wIdx ? 0 : o4.val.value, curStackOffset - curCompilerTempSz, UINT16_MAX); break;
+				case stackVar: if(wIdx >= (o4.val.stackOffset + 3) >> 2){readReg = moveConstantToRegs(0, curStackOffset - curCompilerTempSz, UINT16_MAX); break;} 
+				readReg = moveOffsetToRegs(o4.val.value + wIdx * 4, o4.val.value + wIdx * 4, registerPermanence); break;
+			} if(o1.val.value - 1){
+				if(offsetRegister != -1){
+					emitOpcode(strw_imm_32); emitArgument(offsetRegister, 4);
+					emitArgument(readReg, 4); emitArgument(wIdx * 4, 12);
+				}else{
+					storeRegisterIntoStack(readReg, baseWbAddr + wIdx * 4);
+				}
+			} else{
+				if(offsetRegister != -1){
+					storeRegisterIntoStackR(readReg, offsetRegister);
+				}else{
+					storeRegisterIntoStack(readReg, baseWbAddr);
+				}	
+			}
+		}curStackOffset += o1.val.value << 2; curCompilerTempSz += o1.val.value << 2;
+		return (operand){curStackOffset - o1.val.value * 4, o1.val.value * 4, stackVar, 0, 0, registerPermanence};
+		}
 		case opSub: case opAdd: case opBitwiseAnd: case opBitwiseOr:{
 		o2 = *operands, o1 = *(operands - 1);
 		const uint32_t num32BitAdds = ((o1.size > o2.size ? o1.size : o2.size) + 3) >> 2;
@@ -895,9 +927,6 @@ forceinline void restoreSnapshot(const registerSnapshot snapshot){
 		continueLoop:;
 	}
 }
-
-registerSnapshot snapshotStack[maxBranchDepth]; uint8_t snapshotIdx = 0;
-uint32_t relativeDirectBranchOffsets[maxBranchDepth]; uint8_t directBranchIdx = 0;
 operator operatorStack[maxOperatorDepth]; operand operandStack[maxOperands];
 
 forceinline void backpatch(const uint32_t addressToPatch, const uint32_t memoryOffset, uint8_t* progOrigin){
@@ -907,12 +936,17 @@ forceinline void backpatch(const uint32_t addressToPatch, const uint32_t memoryO
 
 #define branchKeywordLimit 16
 typedef struct{
+	uint32_t jumpbackAddr;
+	registerSnapshot snapshot;
 	uint32_t breakAddrs[branchKeywordLimit]; uint8_t numBreaks;
 	uint32_t continueAddrs[branchKeywordLimit]; uint8_t numContinues;
-	uint32_t jumpbackAddr;
 }relativeLoopOffset;
 #define emptyLoopOffset (relativeLoopOffset){.numBreaks = 0}
-relativeLoopOffset relativeLoopBlocks[maxBranchDepth]; uint8_t relativeLoopIdx = 0;
+typedef struct{
+	uint32_t jumpbackAddr; registerSnapshot snapshot;
+}relativeIfOffset;
+relativeLoopOffset relativeLoopBlocks[maxBranchDepth]; uint8_t relativeLoopIdx;
+relativeIfOffset relativeIfBlocks[maxBranchDepth]; uint8_t relativeIfIdx;
 
 forceinline uint8_t combineOperators(uint8_t opIdx){
 	if(opIdx == 0) return 0;
@@ -920,6 +954,7 @@ forceinline uint8_t combineOperators(uint8_t opIdx){
 		case opEqual:
 		switch(operatorStack[opIdx-1].subtype){
 			case opDereference: operatorStack[--opIdx].subtype = opWriteback; break;
+			case opDereferenceArr: operatorStack[--opIdx].subtype = opWritebackArr; break;
 			case opAdd: operatorStack[--opIdx].subtype = opIncrement; break;
 			case opSub: operatorStack[--opIdx].subtype = opDecrement; break;
 			case opMul: operatorStack[--opIdx].subtype = opScaleM; break;
@@ -946,7 +981,7 @@ void decrementScope(){
 }
 forceinline void decrementScopeKey(const uint8_t keyType){
 	decrementScope(); switch(keyType){
-	case ifKey: directBranchIdx--; break;
+	case ifKey: relativeIfIdx--; break;
 	case whileKey: relativeLoopIdx--;
 	}
 }
@@ -954,7 +989,7 @@ forceinline void decrementScopeKey(const uint8_t keyType){
 forceinline void incrementScope(){curScope++;}
 forceinline void incrementScopeKey(const uint8_t keyType){
 	incrementScope(); switch(keyType){
-	case ifKey: directBranchIdx++; break;
+	case ifKey: relativeIfIdx++; break;
 	case whileKey: relativeLoopIdx++;
 	}
 }
@@ -969,11 +1004,30 @@ typedef struct{
 #pragma pack(pop, 1)
 
 uint8_t branchType[maxBranchDepth]; uint8_t branchDepth = 0;
+uint8_t operatorIdx, operandIdx;
 
+forceinline uint8_t flushOperatorStacks(const uint32_t registerPermanence){
+	for(int8_t idx = operatorIdx - 1; idx >= 0; idx--){
+		idx = combineOperators(idx);
+		if(numOperands(operatorStack[idx].subtype) > operandIdx){return unexpectedExpression;}
+		const operand tmp = assembleOp(operatorStack[idx], operandStack + operandIdx - 1, registerPermanence);
+		operandIdx -= numOperands(operatorStack[idx].subtype);
+		operandStack[operandIdx++] = tmp;
+	}
+	if(operandIdx > 1) return unexpectedExpression; operatorIdx = 0; return noError;
+}
+forceinline void clearCompilerTemporaries(){
+	for(uint8_t r = 0; r < maxGPRegs; r++){
+		if(virtualRegFile[r].stackOffset > curStackOffset - curCompilerTempSz && virtualRegFile[r].stackOffset < curStackOffset){
+			virtualRegFile[r].dirty = empty;
+		}
+	}
+	curStackOffset -= curCompilerTempSz; curCompilerTempSz = 0;
+}
 uint8_t assembleSource(const char* src, uint8_t* progOrigin){
 	initializeVirtualFlags(); initializeVirtualRegs(); curScope = 0; progAddr = 0;
 	setSource(src); int8_t branchTypeFound = -1;
-	uint8_t operatorIdx = 0, operandIdx = 0;
+	operatorIdx = 0; operandIdx = 0; relativeLoopIdx = 0; relativeIfIdx = 0;
 	uint32_t registerPermanence = 0, allocationSz = 0; 
 	persistentToken persistentTokens; token previousToken = (token){(void*)0, 0, nullToken, 0}; uint16_t precedence = 0;
 	*((uint8_t*)&persistentTokens) = 0;
@@ -1018,21 +1072,9 @@ uint8_t assembleSource(const char* src, uint8_t* progOrigin){
 		break;
 		case endLine:
 		persistentTokens.foundAllocation = 0;
-		for(int8_t idx = operatorIdx - 1; idx >= 0; idx--){
-			idx = combineOperators(idx);
-			if(numOperands(operatorStack[idx].subtype) > operandIdx){return unexpectedExpression;}
-			const operand tmp = assembleOp(operatorStack[idx], operandStack + operandIdx - 1, registerPermanence);
-			operandIdx -= numOperands(operatorStack[idx].subtype);
-			operandStack[operandIdx++] = tmp;
-		}
-		if(operandIdx > 1) return unexpectedExpression;
-		operatorIdx = 0; operandIdx = 0;
-		for(uint8_t r = 0; r < maxGPRegs; r++){
-			if(virtualRegFile[r].stackOffset > curStackOffset - curCompilerTempSz && virtualRegFile[r].stackOffset < curStackOffset){
-				virtualRegFile[r].dirty = empty;
-			}
-		}
-		curStackOffset -= curCompilerTempSz; curCompilerTempSz = 0;
+		const uint8_t opErr = flushOperatorStacks(registerPermanence);
+		if(opErr != noError) return opErr; operandIdx = 0;
+		clearCompilerTemporaries();
 		break;
 		case keywordToken:
 		persistentTokens.foundAllocation = 0;
@@ -1040,11 +1082,15 @@ uint8_t assembleSource(const char* src, uint8_t* progOrigin){
 			case flushKey:
 			persistentTokens.foundFlush = 1; break;
 			case ifKey: case whileKey:
-			branchType[branchDepth++] = curToken.subtype; break;
+			branchType[branchDepth] = curToken.subtype; break;
 			case volatileKey: persistentTokens.foundVolatile = 1; break;
 			case continueKey: emitOpcode(b_imm_32); emitArgument(4096, 12);
 			relativeLoopBlocks[relativeLoopIdx-1].continueAddrs[relativeLoopBlocks[relativeLoopIdx-1].numContinues] = progAddr;
 			relativeLoopBlocks[relativeLoopIdx-1].numContinues++; break;
+			case breakKey: restoreSnapshot(relativeLoopBlocks[relativeLoopIdx-1].snapshot); 
+			relativeLoopBlocks[relativeLoopIdx-1].breakAddrs[relativeLoopBlocks[relativeLoopIdx-1].numBreaks] = progAddr;
+			relativeLoopBlocks[relativeLoopIdx-1].numBreaks++; emitOpcode(b_imm_32); emitArgument(4096, 12);
+			break;
 		} break;
 		case clampToken:
 		persistentTokens.foundAllocation = 0;
@@ -1053,21 +1099,15 @@ uint8_t assembleSource(const char* src, uint8_t* progOrigin){
 			precedence += (curToken.subtype == parenthesesL) * 16 - (curToken.subtype == parenthesesR) * 16;
 			break;
 			case curlyBL:
-			branchDepth--;
-			for(int8_t idx = operatorIdx - 1; idx >= 0; idx--){
-				idx = combineOperators(idx);
-				if(numOperands(operatorStack[idx].subtype) > operandIdx){return unexpectedExpression;}
-				const operand tmp = assembleOp(operatorStack[idx], operandStack + operandIdx - 1, registerPermanence);
-				operandIdx -= numOperands(operatorStack[idx].subtype);
-				operandStack[operandIdx++] = tmp;
-			}if(operandIdx > 1) return unexpectedExpression;
-			operatorIdx = 0;
+			const uint8_t opErr = flushOperatorStacks(registerPermanence);
+			if(opErr != noError) return opErr;
+			operatorIdx = 0; operand condition; uint8_t invalidBackpatch = 0;
 			switch(branchType[branchDepth]){
-				case whileKey: relativeLoopBlocks[relativeLoopIdx].jumpbackAddr = progAddr; snapshotStack[snapshotIdx] = getSnapshot();
-				case ifKey: const operand condition = operandStack[--operandIdx];
+				case whileKey: relativeLoopBlocks[relativeLoopIdx].jumpbackAddr = progAddr; relativeLoopBlocks[relativeLoopIdx].snapshot = getSnapshot();
+				case ifKey: condition = operandStack[--operandIdx];
 				switch(condition.operandType){
-					case flagVar: operandIdx = 0; operatorIdx = 0;
 					case constant:
+					invalidBackpatch = 1;
 					if(!condition.val.value){
 						for(uint8_t depth = 1; depth;){
 							nextToken();
@@ -1077,43 +1117,46 @@ uint8_t assembleSource(const char* src, uint8_t* progOrigin){
 					case stackVar:
 					operandStack[operandIdx++] = condition; operandStack[operandIdx] = (operand){0, 4, constant, 0, 0, registerPermanence};
 					assembleOp((operator){opCmpEqual, 0}, operandStack + operandIdx, registerPermanence); operandIdx -= 2;
-				} if(branchType[branchDepth] == ifKey) relativeDirectBranchOffsets[directBranchIdx] = progAddr;
-				relativeDirectBranchOffsets[directBranchIdx] = condition.operandType == constant ? UINT32_MAX : relativeDirectBranchOffsets[directBranchIdx];
-				emptyFlags();
+				} if(branchType[branchDepth] == ifKey) relativeIfBlocks[relativeIfIdx].jumpbackAddr = progAddr;
+				emptyFlags(); clearCompilerTemporaries();
+				break;
+			} if(!invalidBackpatch){emitOpcode(bc_imm_32); emitFlag(getOppositeFlag(virtualFlags.flagType)); emitArgument(4096, 12);}
+			switch(branchType[branchDepth]){
+				case whileKey: registerPermanence += 128;
+				if(invalidBackpatch) relativeLoopBlocks[relativeLoopIdx].jumpbackAddr = UINT32_MAX; break;
+				case ifKey: if(invalidBackpatch) relativeIfBlocks[relativeIfIdx].jumpbackAddr = UINT32_MAX;
+				relativeIfBlocks[relativeIfIdx].snapshot = getSnapshot();
 				break;
 			}
 			registerPermanence += (branchType[branchDepth] == whileKey) * 128;
-			emitOpcode(bc_imm_32); emitFlag(getOppositeFlag(virtualFlags.flagType)); emitArgument(4096, 12);
-			if(branchType[branchDepth] == ifKey) snapshotStack[snapshotIdx] = getSnapshot(); incrementScopeKey(branchTypeFound);
-			for(uint8_t r = 0; r < maxGPRegs; r++){
-				if(virtualRegFile[r].stackOffset > curStackOffset - curCompilerTempSz && virtualRegFile[r].stackOffset < curStackOffset){
-					virtualRegFile[r].dirty = empty;
-				}
-			}
-			curStackOffset -= curCompilerTempSz; curCompilerTempSz = 0; snapshotIdx++;
-			switch(branchType[branchDepth]){case ifKey: directBranchIdx++; break; case whileKey: relativeLoopIdx++;}
+			incrementScopeKey(branchTypeFound);
+			clearCompilerTemporaries();
+			switch(branchType[branchDepth]){case ifKey: relativeIfIdx++; break; case whileKey: relativeLoopIdx++;}
 			branchDepth++;
 			break;
 			case curlyBR:
 			branchDepth--;
-			decrementScope(); snapshotIdx--;
+			decrementScopeKey(branchType[branchDepth]);
 			for(uint8_t r = 0; r < maxGPRegs; r++) if(virtualRegFile[r].stackOffset >= curStackOffset) virtualRegFile[r].dirty = empty;
 			uint32_t backpatchAddr; switch(branchType[branchDepth]){
 				case ifKey:
-				directBranchIdx--; backpatchAddr = relativeDirectBranchOffsets[directBranchIdx];
-				break;
+				backpatchAddr = relativeIfBlocks[relativeIfIdx].jumpbackAddr; 
+				restoreSnapshot(relativeIfBlocks[relativeIfIdx].snapshot); break;
 				case whileKey:
-				relativeLoopIdx--; backpatchAddr = relativeLoopBlocks[relativeLoopIdx].jumpbackAddr + 4;
+				backpatchAddr = relativeLoopBlocks[relativeLoopIdx].jumpbackAddr + 4;
 				for(uint8_t c = 0; c < relativeLoopBlocks[relativeLoopIdx].numContinues; c++){
 					printf("BACKPATCH CONTINUE\nLOCATION: %d  DATA: %d\n", relativeLoopBlocks[relativeLoopIdx].continueAddrs[c], backpatchAddr);
-				}
-				break;
-				
+				}restoreSnapshot(relativeLoopBlocks[relativeLoopIdx].snapshot); break;
 			}
-			restoreSnapshot(snapshotStack[snapshotIdx]);
-			if(branchType[branchDepth] == whileKey){emitOpcode(b_imm_32); emitArgument((backpatchAddr - 4) - progAddr - 4, 16);}
-			if(relativeDirectBranchOffsets[directBranchIdx] != UINT32_MAX) printf("BACKPATCH %d\n", progAddr - backpatchAddr - 4); 
-			backpatch(backpatchAddr, progAddr, progOrigin);
+			if(branchType[branchDepth] == whileKey){
+				emitOpcode(b_imm_32); emitArgument((backpatchAddr - 4) - progAddr - 4, 16);
+				for(uint8_t b = 0; b < relativeLoopBlocks[relativeLoopIdx].numBreaks; b++){
+					printf("BACKPATCH BREAK\nLOCATION: %d  DATA: %d\n", relativeLoopBlocks[relativeLoopIdx].breakAddrs[b], progAddr);
+				}
+			}if(backpatchAddr - 4 != UINT32_MAX){
+				printf("BACKPATCH %d\n", progAddr - backpatchAddr - 4); 
+				backpatch(backpatchAddr, progAddr, progOrigin);
+			}
 			branchTypeFound = -1;
 		}
 		break;
