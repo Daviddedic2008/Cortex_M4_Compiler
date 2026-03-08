@@ -45,7 +45,7 @@ enum clampSubtype {
 };
 
 enum keywordSubtype {
-	ifKey, whileKey,
+	ifKey, whileKey, elseKey,
 	breakKey, continueKey, flushKey, volatileKey
 };
 
@@ -108,7 +108,8 @@ void nextToken(){
 		case 'o': if(tokenCmpLiteral(curToken, "or")){curToken.type = opToken; curToken.subtype = opLogicalOr; return;} break;
 		case 'a': if(tokenCmpLiteral(curToken, "and")){curToken.type = opToken; curToken.subtype = opLogicalAnd; return;} break;
 		case 'n': if(tokenCmpLiteral(curToken, "not")){curToken.type = opToken; curToken.subtype = opLogicalNot; return;} break;
-		case 'e': if(tokenCmpLiteral(curToken, "equals")){curToken.type = opToken; curToken.subtype = opCmpEqual; return;} break;
+		case 'e': if(tokenCmpLiteral(curToken, "equals")){curToken.type = opToken; curToken.subtype = opCmpEqual; return;}
+		else if(tokenCmpLiteral(curToken, "else")){curToken.type = keywordToken; curToken.subtype = elseKey; return;} break;
 		case 'g': if(tokenCmpLiteral(curToken, "greater")){curToken.type = opToken; curToken.subtype = opCmpGreater; return;} break;
 		case 'l': if(tokenCmpLiteral(curToken, "less")){curToken.type = opToken; curToken.subtype = opCmpLess; return;} break;
 		case 'i': if(tokenCmpLiteral(curToken, "if")){curToken.type = keywordToken; curToken.subtype = ifKey; return;}
@@ -660,10 +661,10 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 		case opWritebackArr:{
 		int8_t addrReg = -1;  uint32_t addrConst;
 		const operand o4 = *operands; const operand o3 = *(operands - 1); o2 = *(operands - 2); o1 = *(operands - 3);
-		uint32_t baseWbAddr = o2.val.stackOffset; int8_t offsetRegister = -1;
+		uint32_t baseWbAddr = o2.val.stackOffset; int8_t offsetRegister = -1; uint8_t offd;
 		switch(o3.operandType){
 			case constant: baseWbAddr = o3.val.value; break;
-			case stackVar: offsetRegister = moveOffsetToRegs(o3.val.stackOffset, o3.val.stackOffset, registerPermanence); virtualRegFile[offsetRegister].dirty = locked;
+			case stackVar: offsetRegister = moveOffsetToRegs(o3.val.stackOffset, o3.val.stackOffset, registerPermanence); offd = virtualRegFile[offsetRegister].dirty; virtualRegFile[offsetRegister].dirty = locked;
 			if(o1.val.value - 1){emitOpcode(subw_reg_32); emitArgument(offsetRegister, 4); emitArgument(stackPointerReg, 4); emitArgument(offsetRegister, 4);}
 		}const uint32_t offsetCheck = curStackOffset + (curCompilerTempSz == 0);
 		for(uint32_t wIdx = 0; wIdx < o1.val.value; wIdx++){
@@ -685,7 +686,7 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 					storeRegisterIntoStack(readReg, baseWbAddr);
 				}	
 			}if(virtualRegFile[readReg].stackOffset >= curStackOffset - curCompilerTempSz && virtualRegFile[readReg].stackOffset < offsetCheck) virtualRegFile[readReg].dirty = empty;
-		}if(offsetRegister != -1) virtualRegFile[offsetRegister].dirty = empty;
+		}virtualRegFile[offsetRegister].dirty = offd;
 		curStackOffset += o1.val.value << 2; curCompilerTempSz += o1.val.value << 2;
 		for(uint8_t r = 0; r < maxGPRegs; r++){
 			if(virtualRegFile[r].stackOffset >= baseWbAddr && virtualRegFile[r].stackOffset < baseWbAddr + o1.val.value * 4) virtualRegFile[r].dirty = empty;
@@ -985,7 +986,7 @@ void decrementScope(){
 }
 forceinline void decrementScopeKey(const uint8_t keyType){
 	decrementScope(); switch(keyType){
-	case ifKey: relativeIfIdx--; break;
+	case ifKey: case elseKey: relativeIfIdx--; break;
 	case whileKey: relativeLoopIdx--;
 	}
 }
@@ -993,7 +994,7 @@ forceinline void decrementScopeKey(const uint8_t keyType){
 forceinline void incrementScope(){curScope++;}
 forceinline void incrementScopeKey(const uint8_t keyType){
 	incrementScope(); switch(keyType){
-	case ifKey: relativeIfIdx++; break;
+	case ifKey: case elseKey: relativeIfIdx++; break;
 	case whileKey: relativeLoopIdx++;
 	}
 }
@@ -1035,8 +1036,8 @@ uint8_t assembleSource(const char* src, uint8_t* progOrigin){
 	uint32_t registerPermanence = 0, allocationSz = 0; 
 	persistentToken persistentTokens; token previousToken = (token){(void*)0, 0, nullToken, 0}; uint16_t precedence = 0;
 	*((uint8_t*)&persistentTokens) = 0;
-	uint8_t started = 0;
-	do{nextToken();
+	uint8_t refreshToken = 1;
+	do{if(refreshToken) nextToken(); else refreshToken = 1;
 		switch(curToken.type){
 		case constantToken:
 		persistentTokens.foundAllocation = 0;
@@ -1107,6 +1108,7 @@ uint8_t assembleSource(const char* src, uint8_t* progOrigin){
 			if(opErr != noError) return opErr;
 			operatorIdx = 0; operand condition; uint8_t invalidBackpatch = 0;
 			switch(branchType[branchDepth]){
+				case elseKey: goto skipConditionalParsing;
 				case whileKey: relativeLoopBlocks[relativeLoopIdx].jumpbackAddr = progAddr; relativeLoopBlocks[relativeLoopIdx].snapshot = getSnapshot();
 				case ifKey: condition = operandStack[--operandIdx];
 				switch(condition.operandType){
@@ -1133,18 +1135,23 @@ uint8_t assembleSource(const char* src, uint8_t* progOrigin){
 				break;
 			}
 			registerPermanence += (branchType[branchDepth] == whileKey) * 128;
-			incrementScopeKey(branchTypeFound);
 			clearCompilerTemporaries();
-			switch(branchType[branchDepth]){case ifKey: relativeIfIdx++; break; case whileKey: relativeLoopIdx++;}
-			branchDepth++;
-			break;
+			skipConditionalParsing: incrementScopeKey(branchType[branchDepth]); 
+			branchDepth++; break;
 			case curlyBR:
 			branchDepth--;
+			nextToken(); refreshToken = 0;
 			decrementScopeKey(branchType[branchDepth]);
 			for(uint8_t r = 0; r < maxGPRegs; r++) if(virtualRegFile[r].stackOffset >= curStackOffset) virtualRegFile[r].dirty = empty;
 			uint32_t backpatchAddr; switch(branchType[branchDepth]){
 				case ifKey:
 				backpatchAddr = relativeIfBlocks[relativeIfIdx].jumpbackAddr; 
+				restoreSnapshot(relativeIfBlocks[relativeIfIdx].snapshot); 
+				if(curToken.type == keywordToken && curToken.subtype == elseKey){branchType[branchDepth] = elseKey; 
+					relativeIfBlocks[relativeIfIdx].jumpbackAddr = progAddr; emitOpcode(b_imm_32); emitArgument(4096, 12);
+				}break;
+				case elseKey:
+				backpatchAddr = relativeIfBlocks[relativeIfIdx].jumpbackAddr;
 				restoreSnapshot(relativeIfBlocks[relativeIfIdx].snapshot); break;
 				case whileKey:
 				backpatchAddr = relativeLoopBlocks[relativeLoopIdx].jumpbackAddr + 4;
@@ -1161,7 +1168,6 @@ uint8_t assembleSource(const char* src, uint8_t* progOrigin){
 				printf("BACKPATCH %d\n", progAddr - backpatchAddr - 4); 
 				backpatch(backpatchAddr, progAddr, progOrigin);
 			}
-			branchTypeFound = -1;
 		}
 		break;
 		}

@@ -157,7 +157,7 @@ x /= 5; // scales x by 1/5
 
 ```
 
-### LOGICAL AND, LOGICAL OR, ADD, SUB
+### BITWISE AND, LOGICAL OR, ADD, SUB
 
 These operators do what you would expect, and also work with variables of any size.
 
@@ -227,10 +227,11 @@ Branching is handled via careful register snapshotting to ensure register states
 Inside conditionals, attempt to refrain from changing the register file too much, as this invokes a certain efficiency penalty.
 The snapshot restorer is, however, efficient and will only load/store to stack if nescessary. It prioritizes moving between registers if it can.
 
-### IF
+### IF/ELSE
 
 ```rust
 // if [cond] {...} NOTE: parentheses enclosing condition are optional!
+// else {...} NOTE: must be directly preceded by an if and a }!
 // [cond] can be a variable, comparison, expression, or constant
 word x = 5;
 if(x equals 5){ // emits a conditional branch
@@ -238,6 +239,9 @@ if(x equals 5){ // emits a conditional branch
 }
 if x{x = x + 5;} // also emits a conditional branch, comparing x to 0
 if 1{x = 5;} // no comparison, either emits or doesnt emit code based on constant
+
+if(x equals 5){...}
+else{...} // standard if/else block
 
 ```
 
@@ -258,6 +262,21 @@ while 1{x = 5;} // no comparison, makes an infinite loop
 ```
 
 WHILE branches can be used to make infinite loops with no comparison penalty. They do not default to the 32-bit branching opcode, making them slightly more cache friendly than ifs :)
+
+### CONTINUE/BREAK
+
+CONTINUE and BREAK are supported fully, but there is a maximum of 16 BREAK and 16 CONTINUE statements per loop.
+They properly restore register snapshots, although invoking BREAK does automatically "paste" in the register reconciliation code instead of jumping to a shared block.
+
+```rust
+word idx = 0;
+while 1{ // infinite loop
+	if(idx equals 5){break;}
+	if(idx equals 7){continue;} // turns into infinite loop
+	idx += 1;
+}
+
+```
 
 ---
 

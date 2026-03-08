@@ -13,3 +13,6 @@ word 2 z2 = x2 + y2;
 # test signed values #
 word x3 = -1; word y3 = 5;
 word z3 = x3 * y3 - x3; 
+
+# test lazy storage #
+word inc = 0; inc += 5; inc *= 7; inc /= 4;
