@@ -11,8 +11,8 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 add_compile_options(-Wall -Wextra)
 
 add_executable(CortexM4Compiler
-    main.c 
-	compiler.c
+    src/main.c 
+	src/compiler.c
 )
 target_compile_options(${PROJECT_NAME} PRIVATE -O2)
 target_link_options(${PROJECT_NAME} PRIVATE -s)

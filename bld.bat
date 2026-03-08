@@ -11,7 +11,7 @@ set RESET=!ESC![0m
 set "inputFile=%~1"
 
 echo %YELLOW%--- Compiling ---%RESET%
-cmake --build --preset x64-debug
+cmake --build --preset x64-debug 
 
 if %errorlevel% equ 0 (
     echo.
