@@ -1,0 +1,51 @@
+# Toy Compiler for Cortex-M4
+
+A lightweight C-based compiler targeting the ARM Cortex-M4 architecture. This project is designed to be efficient enough to eventually run as a self-hosted compiler directly on Cortex-M4 hardware.
+
+## Current Status
+* **Target:** ARM Cortex-M4.
+* **Host Build:** Windows x64 using GNU GCC.
+* **Feature Goal:** Self-hosting capabilities and direct flashing to hardware.
+
+## Syntax & Docs
+* Read DOCS.md to gain an idea of how the language works.
+
+## Project Files
+* `main.c`
+* `compiler.c` : Main file
+* `src.m4` : Source code file (can be opened with the custom UDL).
+* `m4UDL.xml` : My language's UDL file for use in notepad++.
+* `CMakeLists.txt`: Build system configuration.
+* `bld.bat`: Standard build script.
+* `remake.bat`: Clean and cache refresh script.
+* `compile.bat` : Command to compile a text file.
+
+## Usage
+
+### Build and Run
+To compile the compiler on Windows (with GCC in path)
+
+First navigate to the repository
+```cmd
+cd %pathToRepo%
+```
+
+Compile compiler :)
+```cmd
+bld
+```
+
+To compile a source file
+```cmd
+compile %sourcePath%
+```
+
+OR:
+```cmd
+%directoryOfCompilerExecutable%/CortexM4Compiler.exe %sourcePath%
+```
+
+API used to compile a string
+```c
+void assembleSource(const char* sourceString, const uint32_t programOrigin)
+```
