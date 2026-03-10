@@ -2,7 +2,7 @@
 
 **Lightweight language made for 32 bit arithmetic and data structures**
 
-Single pass compiler, greedy register allocator(that spills based on loop depth and recent use), backpatching for jumps, constant folding, lazy register storage, lazy flag storage.
+Single pass compiler, greedy register allocator\*, backpatching for jumps, constant folding, lazy register storage, lazy flag storage.
 This compiler is machine-dependent and relies on a standard "word" size, which is 32 bits for the Cortex M4. This is done to force the programmer to optimize properly.
 Memory footprint is small, with the binary being <64KB and the overall RAM usage(accounting for stack too) being <32KB.
 
@@ -10,7 +10,9 @@ This language is almost a higher-level version of assembly language, with variab
 Single pass compilation has some issues, especially when implemented in <2000 lines of C. Certain stuff is left to the user to optimize.
 The language is perfect for making small scripts that interface with GPIO, as the manual dereferencing helps with that.
 Since the compiler is small enough to theoretically run on the Cortex M4 itself with room to spare, this language could be used in a pseudo-OS on that MCU.
+It could easily self-host on much more constrained systems, but I do not know of any lower spec ARM thumb-2 systems.
 
+\*NOTE: Register allocator spills based on loop depth, prioritizing register used deep in loops as well as recently used registers.
 Now, here's the actual documentation:
 
 ---
@@ -61,6 +63,18 @@ memoryLocation = 100; // you want this variable to write back to stack always, f
 flush memoryLocation = 5; // forces stack writeback in this case
 memoryLocation = 5; // if memoryLocation is already in registers, load there
 
+
+```
+
+### EQUAL
+
+Variables can be set using the EQUAL operator. Setting one variable equal to another will always copy (either from registers or stack) to always preserve original.
+
+```rust
+word var; // define 1 word variable
+var = 10; // set to 10
+word var2 = 15;
+var = var2; // will NOT be lazy. important distinction. this triggers register-register copy to keep original data intact.
 
 ```
 

@@ -478,6 +478,8 @@ forceinline uint8_t returnImmOpcode(const uint8_t subtype){
 		case opBitwiseAnd: return andw_imm_32;
 		case opBitwiseOr: return orrs_imm_32;
 		case opBitwiseNot: return mvn_imm_32;
+		case opRightShift: return lsr_imm_32;
+		case opLeftShift: return lsl_imm_32;
 	}
 } forceinline uint8_t returnRegOpcode(const uint8_t subtype){
 	switch(subtype){
@@ -487,6 +489,8 @@ forceinline uint8_t returnImmOpcode(const uint8_t subtype){
 		case opBitwiseAnd: return andw_reg_32;
 		case opBitwiseOr: return orrs_reg_32;
 		case opBitwiseNot: return mvn_reg_32;
+		case opRightShift: return lsr_reg_32;
+		case opLeftShift: return lsl_reg_32;
 	}
 }
 
@@ -494,6 +498,7 @@ forceinline uint8_t immSize(const uint8_t subtype){
 	switch(subtype){
 		case opBitwiseAnd: case opBitwiseXor: case opBitwiseOr: return 8;
 		case opIncrement: case opDecrement: case opAdd: case opSub: case opBitwiseNot: return 16;
+		case opRightShift: case opLeftShift: return 5;
 	}
 }
 
@@ -703,7 +708,7 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 		}
 		return (operand){curStackOffset - o1.val.value * 4, o1.val.value * 4, stackVar, 0, 0, registerPermanence};
 		}
-		case opSub: case opAdd: case opBitwiseAnd: case opBitwiseOr:{
+		case opSub: case opAdd: case opBitwiseAnd: case opBitwiseOr: case opRightShift: case opLeftShift:{
 		o2 = *operands, o1 = *(operands - 1);
 		const uint32_t num32BitAdds = ((o1.size > o2.size ? o1.size : o2.size) + 3) >> 2;
 		for(uint32_t wIdx = 0; wIdx < num32BitAdds; wIdx++){
@@ -740,7 +745,7 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 			virtualRegFile[r2].dirty = empty; else virtualRegFile[r2].dirty = r2d;
 			const uint8_t resultReg = getEmptyRegister(curStackOffset + wIdx * 4, registerPermanence, noCheck); virtualRegFile[resultReg].dirty = dirty;
 			if(r2 == -1) emitOpcode(returnImmOpcode(op.subtype)); else emitOpcode(returnRegOpcode(op.subtype));
-			emitModifier(wIdx == 0);
+			if(op.subtype == opAdd || op.subtype == opSub) emitModifier(wIdx == 0);
 			emitArgument(resultReg, 4); emitArgument(r1, 4); emitArgument(r2 == -1 ? constantInAdd : r2, r2 == -1 ? immSize(op.subtype) : 4);
 		}
 		curStackOffset += num32BitAdds * 4; curCompilerTempSz += num32BitAdds * 4;
