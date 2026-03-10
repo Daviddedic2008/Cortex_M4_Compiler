@@ -137,7 +137,7 @@ Arithmetic is optimized for 32-bit variables, as bigger vars must be written thr
 * Addition works with any sizes
 * USE 32 BIT VALUES FOR ARITHMETIC! Using larger values will result in unneeded load/store pairs.
 
-### INCREMENT/DECREMENT or SCALE
+### INCREMENT/DECREMENT or SCALE or SHIFT IN PLACE
 
 Although doing x = x + 5; is valid and will compile, the quirks of single-pass shunting yard result in x being moved to a new register, while freeing up the previous one.
 This introduces a slight amount of unneeded register pressure that the +=, -=, \*=, and /= operators fix. This is kinda a patch to fix a problem with the compiler itself, but oh well.
@@ -147,13 +147,15 @@ This introduces a slight amount of unneeded register pressure that the +=, -=, \
 // [var] -= [inc]
 // [var] *= [inc]
 // [var] /= [inc]
-// in all cases [var] has to be a variable and [inc] can be a variable, expression, or constant
+// [var] >=/<= [inc]
+// in all cases [var] has to be a variable or expression and [inc] can be a variable, expression, or constant
 word x = 5;
 x += 5; // add 5 to x without changing register
 word y = 7;
 x -= y; // subtracts y from x without changing register
 x *= 5; // scales x by 5
 x /= 5; // scales x by 1/5
+x <= 2; // multiplies by 4 via shifter
 
 ```
 
@@ -170,6 +172,17 @@ word x2 = x | y + x & y; // self explanatory
 word 2 a = 5; word 2 b = 7;
 word 2 z = (a & 5) + b; // also works!
 
+```
+
+### RIGHT/LEFT SHIFTS
+
+These operators do what you would expect, but the variable specifying amount of shifts will only take 32 bits.
+
+```rust
+// [val1] >/< [shift]
+// [val1] can be a variable or expression, [shift] can be number or variable or expression
+word x = 1;
+word xShifted = x < 1; // multiplies by 2
 ```
 
 ---

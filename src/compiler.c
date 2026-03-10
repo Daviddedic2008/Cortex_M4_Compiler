@@ -46,7 +46,7 @@ enum clampSubtype {
 
 enum keywordSubtype {
 	ifKey, whileKey, elseKey,
-	breakKey, continueKey, flushKey, volatileKey
+	breakKey, continueKey, flushKey, volatileKey, argumentKey, returnKey
 };
 
 typedef struct{
@@ -102,11 +102,13 @@ void nextToken(){
 		case '{': curToken.type = clampToken; curToken.subtype = curlyBL;return;
 		case '}': curToken.type = clampToken; curToken.subtype = curlyBR;return;
 		case ';': curToken.type = endLine; curToken.subtype = 0; return;
-		case 'r': if(tokenCmpLiteral(curToken, "ref")){curToken.type = opToken; curToken.subtype = opReference; return;} break;
+		case 'r': if(tokenCmpLiteral(curToken, "ref")){curToken.type = opToken; curToken.subtype = opReference; return;}
+		else if(tokenCmpLiteral(curToken, "return")){curToken.type = keywordToken; curToken.subtype = returnKey; return;} break;
 		case 'd': if(tokenCmpLiteral(curToken, "deref")){curToken.type = opToken; curToken.subtype = opDereference; return;}
 		else if(tokenCmpLiteral(curToken, "decrement")){curToken.type = opToken; curToken.subtype = opDecrement; return;} break;
 		case 'o': if(tokenCmpLiteral(curToken, "or")){curToken.type = opToken; curToken.subtype = opLogicalOr; return;} break;
-		case 'a': if(tokenCmpLiteral(curToken, "and")){curToken.type = opToken; curToken.subtype = opLogicalAnd; return;} break;
+		case 'a': if(tokenCmpLiteral(curToken, "and")){curToken.type = opToken; curToken.subtype = opLogicalAnd; return;}
+		else if(tokenCmpLiteral(curToken, "argument")){curToken.type = keywordToken; curToken.subtype = argumentKey; return;} break;
 		case 'n': if(tokenCmpLiteral(curToken, "not")){curToken.type = opToken; curToken.subtype = opLogicalNot; return;} break;
 		case 'e': if(tokenCmpLiteral(curToken, "equals")){curToken.type = opToken; curToken.subtype = opCmpEqual; return;}
 		else if(tokenCmpLiteral(curToken, "else")){curToken.type = keywordToken; curToken.subtype = elseKey; return;} break;
@@ -141,8 +143,8 @@ typedef enum opcode {
 	mulw_reg_32, divw_reg_32, ite_32, it_32,
 	cmp_reg_32, cmp_imm_32, 
 	eors_reg_32, eors_imm_32, orrs_reg_32, andw_imm_32, andw_reg_32, orrs_imm_32,
-	mvn_imm_32, mvn_reg_32, b_imm_32, bc_imm_32,
-	b_imm_16, bc_imm_16, mov_lit_16, ldr_imm_16, ldr_gpr_imm_16, str_imm_16, mov_reg_reg_16, add_reg_16
+	mvn_imm_32, mvn_reg_32, b_imm_32, b_reg_32, bc_reg_32, bc_imm_32,
+	b_imm_16, b_reg_16, bc_imm_16, bc_reg_16, mov_lit_16, ldr_imm_16, ldr_gpr_imm_16, str_imm_16, mov_reg_reg_16, add_reg_16
 }opcode;
 
 #define lim32 bc_imm_32
@@ -400,6 +402,8 @@ uint8_t moveOffsetToRegsFromRegister(const uint8_t loadRegister, const uint32_t 
 	virtualRegFile[flushIdx] = (registerData){stackOffsetStore, clean, priority};
 	return flushIdx;
 }
+
+void conditionalJump(const uint32_t 
 
 //#############################################################################################################################################
 // STACK/REGISTER MANAGER
