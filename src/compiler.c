@@ -547,7 +547,7 @@ forceinline uint8_t numOperands(const uint8_t subtype){
 	}
 }
 
-#define isTemporary(offset) (offset >= curStackOffset - curCompilerTempSz && offset < (curStackOffset + curCompilerTempSz == 0))
+#define isTemporary(offset) (offset >= (curStackOffset - curCompilerTempSz) && offset < (curStackOffset + (curCompilerTempSz == 0)))
 
 operand assembleOp(const operator op, const operand* operands, const uint16_t registerPermanence){
 	operand ret, o1, o2;
@@ -595,8 +595,19 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 		o2 = *operands; o1 = *(operands - 1);
 		int8_t addrReg = -1; uint8_t addrd; uint32_t constantOffset;
 		switch(o2.operandType){
-			case stackVar:
-			
+			case constant:
+			constantOffset = o2.val.value; break;
+			case stackVar: movedFromStack = 0;
+			addrReg = moveOffsetToRegs(o2.val.stackOffset, o2.val.stackOffset, registerPermanence);
+			if(o1.val.value == 1){
+				addrd = virtualRegFile[addrReg].dirty;
+				virtualRegFile[addrReg].dirty = locked;
+			}
+			else{
+				if(!movedFromStack && !isTemporary(virtualRegFile[addrReg].stackOffset)) addrReg = moveRegToRegs(addrReg, o2.val.stackOffset, registerPermanence);
+				virtualRegFile[addrReg].dirty = locked; addrd = empty;
+				emitOpcode(subw_imm_32); emitArgument(addrReg, 4); emitArgument(stackPointerReg, 4); emitArgument(addrReg, 4);
+			}
 		}
 		uint32_t num32BitTransfers = o1.val.value;
 		for(uint8_t r = 0; r < maxGPRegs; r++){
@@ -615,8 +626,14 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 					loadRegisterFromRegs(rEmpty, r);
 				}
 				break;
-				case stackVar: 
-				
+				case stackVar:{
+				const uint8_t rEmpty = getEmptyRegister(curStackOffset + num32BitTransfers * 4, registerPermanence, noCheck);
+				if(o1.val.value-1){
+					emitOpcode(ldrw_imm_32); emitArgument(addrReg, 4); emitArgument(rEmpty, 4); emitArgument(num32BitTransfers * 4, 12);
+				} else{
+					loadRegisterFromRegs(rEmpty, addrReg);
+				}
+				}
 			}
 			
 		}while(num32BitTransfers > 0);
