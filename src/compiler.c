@@ -547,6 +547,8 @@ forceinline uint8_t numOperands(const uint8_t subtype){
 	}
 }
 
+#define isTemporary(offset) (offset >= curStackOffset - curCompilerTempSz && offset < (curStackOffset + curCompilerTempSz == 0))
+
 operand assembleOp(const operator op, const operand* operands, const uint16_t registerPermanence){
 	operand ret, o1, o2;
 	printf("\n");
@@ -591,6 +593,11 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 		}
 		case opDereferenceVolatile: case opDereference:{
 		o2 = *operands; o1 = *(operands - 1);
+		int8_t addrReg = -1; uint8_t addrd; uint32_t constantOffset;
+		switch(o2.operandType){
+			case stackVar:
+			
+		}
 		uint32_t num32BitTransfers = o1.val.value;
 		for(uint8_t r = 0; r < maxGPRegs; r++){
 			if((virtualRegFile[r].stackOffset == o2.val.value && op.subtype == opDereferenceVolatile) || o2.operandType == stackVar)
@@ -609,7 +616,7 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 				}
 				break;
 				case stackVar: 
-				virtualRegFile[moveOffsetToRegsFromRegister(moveOffsetToRegs(o2.val.stackOffset + num32BitTransfers * 4, o2.val.stackOffset + num32BitTransfers * 4, UINT16_MAX), curStackOffset + num32BitTransfers * 4, UINT16_MAX)].dirty = dirty;
+				
 			}
 			
 		}while(num32BitTransfers > 0);
@@ -624,7 +631,7 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 			case constant: baseRdAddr += o3.val.value; break;
 			case stackVar: movedFromStack = 0;
 			offsetRegister = moveOffsetToRegs(o3.val.stackOffset, o3.val.stackOffset, registerPermanence);
-			if(!movedFromStack){offsetRegister = moveRegToRegs(offsetRegister, o3.val.stackOffset, registerPermanence);}
+			if(!movedFromStack && !isTemporary(virtualRegFile[offsetRegister].stackOffset)){offsetRegister = moveRegToRegs(offsetRegister, o3.val.stackOffset, registerPermanence);}
 			offd = empty; virtualRegFile[offsetRegister].dirty = locked;
 			if(o1.val.value - 1){emitOpcode(subw_reg_32); emitArgument(offsetRegister, 4); emitArgument(stackPointerReg, 4); emitArgument(offsetRegister, 4);}
 		}const uint32_t offsetCheck = curStackOffset + (curCompilerTempSz == 0);
@@ -656,11 +663,18 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 			for(uint8_t r = 0; r < maxGPRegs; r++) if(virtualRegFile[r].stackOffset >= o2.val.stackOffset + o3.val.value && virtualRegFile[r].stackOffset < o2.val.stackOffset + o3.val.value + o1.val.value * 4) 
 			virtualRegFile[r].dirty = empty; addrConst = o2.val.value; break;
 			case stackVar:
-			flushRegisters(); movedFromStack = 0;
+			movedFromStack = 0;
 			addrReg = moveOffsetToRegs(o2.val.stackOffset, o2.val.stackOffset, registerPermanence);
-			if(!movedFromStack) addrReg = moveRegToRegs(addrReg, o2.val.stackOffset, registerPermanence);
-			virtualRegFile[addrReg].dirty = locked; addrd = empty;
-			if(o1.val.value - 1){emitOpcode(subw_imm_32); emitArgument(addrReg, 4); emitArgument(stackPointerReg, 4); emitArgument(addrReg, 4);}
+			if(o1.val.value == 1){
+				addrd = virtualRegFile[addrReg].dirty;
+				virtualRegFile[addrReg].dirty = locked;
+			}
+			else{
+				if(!movedFromStack && !isTemporary(virtualRegFile[addrReg].stackOffset)) addrReg = moveRegToRegs(addrReg, o2.val.stackOffset, registerPermanence);
+				virtualRegFile[addrReg].dirty = locked; addrd = empty;
+				emitOpcode(subw_imm_32); emitArgument(addrReg, 4); emitArgument(stackPointerReg, 4); emitArgument(addrReg, 4);
+			}
+			flushRegisters(); 
 		}const uint32_t offsetCheck = curStackOffset + (curCompilerTempSz == 0);
 		for(uint32_t wIdx = 0; wIdx < o1.val.value; wIdx++){
 			uint8_t readReg;
@@ -683,7 +697,7 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 			else storeRegisterIntoStack(readReg, addrConst + wIdx * 4);
 			if(virtualRegFile[readReg].stackOffset >= curStackOffset - curCompilerTempSz && virtualRegFile[readReg].stackOffset < offsetCheck) virtualRegFile[readReg].dirty = empty;
 		}
-		if(addrReg > -1) virtualRegFile[addrReg].dirty = empty;
+		if(addrReg > -1) virtualRegFile[addrReg].dirty = addrd;
 		curStackOffset += o1.val.value * 4; curCompilerTempSz += o1.val.value * 4;
 		return (operand){curStackOffset - o1.val.value * 4, o1.val.value * 4, stackVar, 0, 0, registerPermanence};
 		}
@@ -697,7 +711,7 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 			virtualRegFile[r].dirty = empty; break;
 			case stackVar: for(uint8_t r = 0; r < maxGPRegs; r++) if(virtualRegFile[r].stackOffset >= o2.val.stackOffset && virtualRegFile[r].stackOffset < o2.val.stackOffset + o1.val.value * 4) flushRegister(r);
 			movedFromStack = 0; offsetRegister = moveOffsetToRegs(o3.val.stackOffset, o3.val.stackOffset, registerPermanence); 
-			if(!movedFromStack) offsetRegister = moveRegToRegs(offsetRegister, o3.val.stackOffset, registerPermanence);
+			if(!movedFromStack && !isTemporary(virtualRegFile[offsetRegister].stackOffset)) offsetRegister = moveRegToRegs(offsetRegister, o3.val.stackOffset, registerPermanence);
 			offd = empty; virtualRegFile[offsetRegister].dirty = locked;
 			if(o1.val.value - 1){emitOpcode(subw_reg_32); emitArgument(offsetRegister, 4); emitArgument(stackPointerReg, 4); emitArgument(offsetRegister, 4);}
 		}const uint32_t offsetCheck = curStackOffset + (curCompilerTempSz == 0);
