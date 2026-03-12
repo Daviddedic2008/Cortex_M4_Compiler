@@ -49,6 +49,12 @@ enum keywordSubtype {
 	breakKey, continueKey, flushKey, volatileKey, argumentKey, returnKey
 };
 
+enum sizeSubtype {
+	wordSize, byteSize, halfSize
+};
+#define byteSz UINT32_MAX
+#define halfSz (UINT32_MAX-1)
+
 typedef struct{
 	char* str; uint16_t len;
 	uint8_t type, subtype;
@@ -117,13 +123,15 @@ void nextToken(){
 		case 'i': if(tokenCmpLiteral(curToken, "if")){curToken.type = keywordToken; curToken.subtype = ifKey; return;}
 		else if(tokenCmpLiteral(curToken, "in")){curToken.type = opToken; curToken.subtype = opDereferenceArr; return;} break;
 		case 'c': if(tokenCmpLiteral(curToken, "continue")){curToken.type = keywordToken; curToken.subtype = continueKey; return;} break;
-		case 'b': if(tokenCmpLiteral(curToken, "break")){curToken.type = keywordToken; curToken.subtype = breakKey; return;} break;
+		case 'b': if(tokenCmpLiteral(curToken, "break")){curToken.type = keywordToken; curToken.subtype = breakKey; return;}
+		else if(tokenCmpLiteral(curToken, "byte")){curToken.type = sizeToken; curToken.subtype = byteSize; return;} break;
+		case 'h': if(tokenCmpLiteral(curToken, "half")){curToken.type = sizeToken; curToken.subtype = halfSize; return;} break;
 		case 'f': if(tokenCmpLiteral(curToken, "flush")){curToken.type = keywordToken; curToken.subtype = flushKey; return;}
 		else if(tokenCmpLiteral(curToken, "free")){curToken.type = opToken; curToken.subtype = opFree; return;} break;
 		case 'v': if(tokenCmpLiteral(curToken, "volatile")){curToken.type = keywordToken; curToken.subtype = volatileKey; return;} break;
 		case 'w': if(tokenCmpLiteral(curToken, "while")){curToken.type = keywordToken; curToken.subtype = whileKey; return;}
 		else if(tokenCmpLiteral(curToken, "word")){curToken.type = sizeToken; curToken.subtype = 0; return;} break;
-	} if(*(curToken.str) >= '0' && *(curToken.str) <= '9'){curToken.type = constantToken; curToken.subtype = 0; return;}
+	} if(*(curToken.str) >= '0' && *(curToken.str) <= '9'){curToken.type = constantToken; curToken.subtype = wordSize; return;}
 	curToken.type = identifierToken;
 }
 
@@ -138,12 +146,15 @@ typedef enum specialRegs {
 typedef enum opcode {
 	movw_reg_reg_32, movw_lit_32, movt_lit_32, 
 	ldrw_imm_32, strw_imm_32, ldrw_reg_32, strw_reg_32,
+	ldrbw_imm_32, strbw_imm_32, ldrbw_reg_32, strbw_reg_32,
+	ldrhw_imm_32, strhw_imm_32, ldrhw_reg_32, strhw_reg_32,
 	subw_imm_32, addw_imm_32, subw_reg_32, addw_reg_32,
 	subs_imm_32, subs_reg_32, lsr_imm_32, lsl_imm_32, lsr_reg_32, lsl_reg_32,
 	mulw_reg_32, divw_reg_32, ite_32, it_32,
 	cmp_reg_32, cmp_imm_32, 
 	eors_reg_32, eors_imm_32, orrs_reg_32, andw_imm_32, andw_reg_32, orrs_imm_32,
 	mvn_imm_32, mvn_reg_32, b_imm_32, b_reg_32, bc_reg_32, bc_imm_32,
+	ldrb_imm_16, strb_imm_16, ldrh_imm_16, strh_imm_16,
 	b_imm_16, b_reg_16, bc_imm_16, bc_reg_16, mov_lit_16, ldr_imm_16, ldr_gpr_imm_16, str_imm_16, mov_reg_reg_16, add_reg_16
 }opcode;
 
@@ -170,9 +181,21 @@ void emitOpcode(const uint8_t code) {
 	case strw_imm_32:    printf("STRW_IMM_32"); break;
 	case ldrw_reg_32:    printf("LDRW_REG_32"); break;
 	case strw_reg_32:    printf("STRW_REG_32"); break;
+	case ldrbw_imm_32:    printf("LDRBW_IMM_32"); break;
+	case strbw_imm_32:    printf("STRBW_IMM_32"); break;
+	case ldrbw_reg_32:    printf("LDRBW_REG_32"); break;
+	case strbw_reg_32:    printf("STRBW_REG_32"); break;
+	case ldrhw_imm_32:    printf("LDRHW_IMM_32"); break;
+	case strhw_imm_32:    printf("STRHW_IMM_32"); break;
+	case ldrhw_reg_32:    printf("LDRHW_REG_32"); break;
+	case strhw_reg_32:    printf("STRHW_REG_32"); break;
 	case mov_lit_16:     printf("MOV_LIT_16"); break;
 	case str_imm_16:     printf("STR_IMM_16"); break;
 	case ldr_imm_16:     printf("LDR_IMM_16"); break;
+	case strb_imm_16:     printf("STRB_IMM_16"); break;
+	case ldrb_imm_16:     printf("LDRB_IMM_16"); break;
+	case strh_imm_16:     printf("STRH_IMM_16"); break;
+	case ldrh_imm_16:     printf("LDRH_IMM_16"); break;
 	case ldr_gpr_imm_16: printf("LDR_GPR_IMM_16"); break;
 	case subw_imm_32:    printf("SUBW_IMM_32"); break;
 	case addw_imm_32:    printf("ADDW_IMM_32"); break;
@@ -253,6 +276,16 @@ forceinline void initializeVirtualRegs(){
 	for(uint8_t idx = 0; idx < maxGPRegs; idx++) virtualRegFile[idx] = (registerData){UINT32_MAX, empty, UINT16_MAX/2};
 }
 
+enum instructionTypes{storeImm16, loadImm16, storeImm32, loadImm32, storeReg32, loadReg32};
+const uint8_t instructionMap[6][3] = {
+    {str_imm_16, strb_imm_16, strh_imm_16}, // storeImm16
+    {ldr_imm_16, ldrb_imm_16, ldrh_imm_16}, // loadImm16
+    {strw_imm_32, strbw_imm_32, strhw_imm_32}, // storeImm32
+    {ldrw_imm_32, ldrbw_imm_32, ldrhw_imm_32}, // loadImm32
+    {strw_reg_32, strbw_reg_32, strhw_reg_32}, // storeReg32
+    {ldrw_reg_32, ldrbw_reg_32, ldrhw_reg_32}  // loadReg32
+};
+
 void storeConstantInReg(const uint8_t reg, const uint32_t c) {
 	if(reg < 8 && c < UINT8_MAX){emitOpcode(mov_lit_16); emitArgument(reg, 3); emitArgument(c, 8);}
 	else{
@@ -260,16 +293,26 @@ void storeConstantInReg(const uint8_t reg, const uint32_t c) {
 		if(c > 65535){emitOpcode(movt_lit_32); emitArgument(reg, 4); emitArgument(c, 16);}
 	}
 }
-void storeRegisterIntoStack(const uint8_t reg, const uint32_t stackOffset) {
+void storeRegisterIntoStack(const uint8_t reg, const uint32_t stackOffset, const uint8_t sizeType) {
 	if (stackOffset >= 4095) {
 		storeConstantInReg(scratchReg1, stackOffset);
-		emitOpcode(strw_reg_32); emitArgument(stackPointerReg, 4); emitArgument(reg, 4);
+		emitOpcode(instructionMap[storeReg32][sizeType]); emitArgument(stackPointerReg, 4); emitArgument(reg, 4);
 		emitArgument(scratchReg1, 4);
-		return;
 	}
-	if(stackOffset < 1021 && stackOffset % 4 == 0 && reg < 8){emitOpcode(str_imm_16); emitArgument(reg, 3); emitArgument(stackOffset, 8);}
+	else if(stackOffset < 1021 && stackOffset % 4 == 0 && reg < 8){emitOpcode(instructionMap[storeImm16][sizeType]); emitArgument(reg, 3); emitArgument(stackOffset, 8);}
 	else{
-		emitOpcode(strw_imm_32); emitArgument(stackPointerReg, 4); emitArgument(reg, 4);
+		emitOpcode(instructionMap[storeImm32][sizeType]); emitArgument(stackPointerReg, 4); emitArgument(reg, 4);
+		emitArgument(stackOffset, 12);
+	}
+}
+void storeRegIntoStackRegPointer(const uint8_t reg, const uint8_t addrReg, const uint32_t stackOffset, const uint8_t sizeType) {
+	if (stackOffset >= 4095) {
+		storeConstantInReg(scratchReg1, stackOffset);
+		emitOpcode(instructionMap[storeReg32][sizeType]); emitArgument(addrReg, 4); emitArgument(reg, 4);
+		emitArgument(scratchReg1, 4);
+	}
+	else{
+		emitOpcode(instructionMap[storeImm32][sizeType]); emitArgument(addrReg, 4); emitArgument(reg, 4);
 		emitArgument(stackOffset, 12);
 	}
 }
@@ -282,21 +325,20 @@ forceinline void storeRegisterIntoStackRAbs(const uint8_t reg, const uint8_t reg
 	emitOpcode(strw_imm_32); emitArgument(reg2, 4); emitArgument(reg, 4);
 	emitArgument(0, 12);
 }
-forceinline void storeRegisterIntoStackR(const uint8_t reg, const uint8_t reg2) {
-	emitOpcode(strw_reg_32); emitArgument(stackPointerReg, 4); emitArgument(reg, 4);
+forceinline void storeRegisterIntoStackR(const uint8_t reg, const uint8_t reg2, const uint8_t sizeType) {
+	emitOpcode(instructionMap[storeReg32][sizeType]); emitArgument(stackPointerReg, 4); emitArgument(reg, 4);
 	emitArgument(reg2, 4); //kedaar was here
 }
-void loadRegisterFromStack(const uint8_t reg, const uint32_t stackOffset) {
+void loadRegisterFromStack(const uint8_t reg, const uint32_t stackOffset, const uint8_t sizeType) {
 	if (stackOffset >= 4095) {
 		emitOpcode(movw_lit_32); emitArgument(scratchReg1, 4); emitArgument(stackOffset, 16);
 		emitOpcode(movt_lit_32); emitArgument(scratchReg1, 4); emitArgument(stackOffset, 16);
-		emitOpcode(ldrw_reg_32); emitArgument(stackPointerReg, 4); emitArgument(reg, 4);
+		emitOpcode(instructionMap[loadReg32][sizeType]); emitArgument(stackPointerReg, 4); emitArgument(reg, 4);
 		emitArgument(scratchReg1, 4);
-		return;
 	}
-	if(stackOffset < 1021 && stackOffset % 4 == 0 && reg < 8){emitOpcode(ldr_imm_16); emitArgument(reg, 3); emitArgument(stackOffset, 8);}
+	else if(stackOffset < 1021 && stackOffset % 4 == 0 && reg < 8){emitOpcode(instructionMap[loadImm16][sizeType]); emitArgument(reg, 3); emitArgument(stackOffset, 8);}
 	else{
-		emitOpcode(ldrw_imm_32); emitArgument(stackPointerReg, 4); emitArgument(reg, 4);
+		emitOpcode(instructionMap[loadImm32][sizeType]); emitArgument(stackPointerReg, 4); emitArgument(reg, 4);
 		emitArgument(stackOffset, 12);
 	}
 }
@@ -305,8 +347,8 @@ void loadRegisterFromStackAbs(const uint8_t reg, const uint32_t stackOffset) {
 	emitOpcode(ldrw_imm_32); emitArgument(scratchReg1, 4); emitArgument(reg, 4);
 	emitArgument(0, 12);
 }
-forceinline void loadRegisterFromStackR(const uint8_t reg, const uint8_t reg2) {
-	emitOpcode(ldrw_reg_32); emitArgument(stackPointerReg, 4); emitArgument(reg, 4);
+forceinline void loadRegisterFromStackR(const uint8_t reg, const uint8_t reg2, const uint8_t sizeType) {
+	emitOpcode(instructionMap[loadReg32][sizeType]); emitArgument(stackPointerReg, 4); emitArgument(reg, 4);
 	emitArgument(reg2, 4);
 }
 forceinline void loadRegisterFromStackRAbs(const uint8_t reg, const uint8_t reg2) {
@@ -319,9 +361,20 @@ forceinline void loadRegisterFromFlags(const uint8_t reg, const uint8_t flag){
 forceinline void loadRegisterFromRegs(const uint8_t r1, const uint8_t r2){
 	emitOpcode(mov_reg_reg_16); emitArgument(r1, 4); emitArgument(r2, 4);
 }
+forceinline void loadRegisterFromRegPointer(const uint8_t reg, const uint8_t spReg, const uint32_t stackOffset, const uint8_t sizeType){
+	if (stackOffset >= 4095) {
+		emitOpcode(movw_lit_32); emitArgument(scratchReg1, 4); emitArgument(stackOffset, 16);
+		emitOpcode(movt_lit_32); emitArgument(scratchReg1, 4); emitArgument(stackOffset, 16);
+		emitOpcode(instructionMap[loadReg32][sizeType]); emitArgument(spReg, 4); emitArgument(reg, 4);
+		emitArgument(scratchReg1, 4);
+	} else{
+		emitOpcode(instructionMap[loadImm32][sizeType]); emitArgument(spReg, 4); emitArgument(reg, 4);
+		emitArgument(stackOffset, 12);
+	}
+}
 void flushRegister(uint8_t regIdx) {
 	if(virtualRegFile[regIdx].dirty == locked) return;
-	if(virtualRegFile[regIdx].dirty == dirty) storeRegisterIntoStack(regIdx, virtualRegFile[regIdx].stackOffset); 
+	if(virtualRegFile[regIdx].dirty == dirty) storeRegisterIntoStack(regIdx, virtualRegFile[regIdx].stackOffset, wordSize); 
 	virtualRegFile[regIdx].dirty = empty; virtualRegFile[regIdx].stackOffset = 0; // free
 }
 forceinline void flushRegisters(){
@@ -356,7 +409,7 @@ uint8_t moveOffsetToRegs(const uint32_t stackOffsetLoad, const uint32_t stackOff
 	}
 	if(!foundLoaded){
 		if(!foundEmpty) flushRegister(flushIdx);
-		loadRegisterFromStack(flushIdx, stackOffsetLoad); movedFromStack = 1;
+		loadRegisterFromStack(flushIdx, stackOffsetLoad, wordSize); movedFromStack = 1;
 	}
 	virtualRegFile[flushIdx] = (registerData){stackOffsetStore, foundLoaded ? virtualRegFile[flushIdx].dirty : clean, priority};
 	return flushIdx;
@@ -395,7 +448,7 @@ uint8_t moveFlagToRegs(const uint32_t stackOffsetLoad, const uint32_t stackOffse
 	if(!foundLoaded){
 		if(!foundEmpty) flushRegister(flushIdx);
 		if(stackOffsetLoad == virtualFlags.stackOffset) loadRegisterFromFlags(flushIdx, flag);
-		else{loadRegisterFromStack(flushIdx, stackOffsetLoad); movedFromStack = 1;}
+		else{loadRegisterFromStack(flushIdx, stackOffsetLoad, wordSize); movedFromStack = 1;}
 	}
 	virtualRegFile[flushIdx] = (registerData){stackOffsetStore, clean, priority};
 	return flushIdx;
@@ -415,7 +468,7 @@ uint8_t moveOffsetToRegsFromRegister(const uint8_t loadRegister, const uint32_t 
 		else if(virtualRegFile[r].priority < lowestPriority && virtualRegFile[r].dirty != locked && !foundEmpty){lowestPriority = virtualRegFile[r].priority; flushIdx = r;}
 	}
 	if(!foundEmpty) flushRegister(flushIdx);
-	loadRegisterFromStackR(flushIdx, loadRegister); movedFromStack = 1;
+	loadRegisterFromStackR(flushIdx, loadRegister, wordSize); movedFromStack = 1;
 	virtualRegFile[flushIdx] = (registerData){stackOffsetStore, clean, priority};
 	return flushIdx;
 }
@@ -578,7 +631,7 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 				virtualRegFile[r].stackOffset = o1.val.stackOffset + wIdx * 4;}
 			}
 			skipWriteback:;
-			if(o1.forceFlush){storeRegisterIntoStack(r, o1.val.stackOffset + wIdx * 4); virtualRegFile[r].dirty = empty;}
+			if(o1.forceFlush){storeRegisterIntoStack(r, o1.val.stackOffset + wIdx * 4, wordSize); virtualRegFile[r].dirty = empty;}
 		}
 		return o1;
 		}
@@ -593,13 +646,15 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 		}
 		case opDereferenceVolatile: case opDereference:{
 		o2 = *operands; o1 = *(operands - 1);
+		const uint8_t sizeType = o1.val.value == halfSz ? halfSize : (o1.val.value == byteSz ? byteSize : wordSize);
 		int8_t addrReg = -1; uint8_t addrd; uint32_t constantOffset;
+		uint32_t num32BitTransfers = o1.val.value >= (UINT32_MAX - 1) ? 1 : o1.val.value;
 		switch(o2.operandType){
 			case constant:
 			constantOffset = o2.val.value; break;
 			case stackVar: movedFromStack = 0;
 			addrReg = moveOffsetToRegs(o2.val.stackOffset, o2.val.stackOffset, registerPermanence);
-			if(o1.val.value == 1){
+			if(num32BitTransfers == 1){
 				addrd = virtualRegFile[addrReg].dirty;
 				virtualRegFile[addrReg].dirty = locked;
 			}
@@ -609,7 +664,6 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 				emitOpcode(subw_imm_32); emitArgument(addrReg, 4); emitArgument(stackPointerReg, 4); emitArgument(addrReg, 4);
 			}
 		}
-		uint32_t num32BitTransfers = o1.val.value;
 		for(uint8_t r = 0; r < maxGPRegs; r++){
 			if((virtualRegFile[r].stackOffset == o2.val.value && op.subtype == opDereferenceVolatile) || o2.operandType == stackVar)
 			flushRegister(r);
@@ -629,7 +683,7 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 				case stackVar:{
 				const uint8_t rEmpty = getEmptyRegister(curStackOffset + num32BitTransfers * 4, registerPermanence, noCheck);
 				if(o1.val.value-1){
-					emitOpcode(ldrw_imm_32); emitArgument(addrReg, 4); emitArgument(rEmpty, 4); emitArgument(num32BitTransfers * 4, 12);
+					loadRegisterFromRegPointer(rEmpty, addrReg, num32BitTransfers * 4, sizeType);
 				} else{
 					loadRegisterFromRegs(rEmpty, addrReg);
 				}
@@ -643,6 +697,7 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 		case opDereferenceArr:{
 		int8_t addrReg = -1;  uint32_t addrConst;
 		const operand o3 = *operands; o2 = *(operands - 1); o1 = *(operands - 2);
+		const uint8_t sizeType = o1.val.value == halfSz ? halfSize : (o1.val.value == byteSz ? byteSize : wordSize);
 		uint32_t baseRdAddr = o2.val.stackOffset; int8_t offsetRegister = -1; uint8_t offd;
 		switch(o3.operandType){
 			case constant: baseRdAddr += o3.val.value; break;
@@ -654,20 +709,19 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 			}else offd = virtualRegFile[offsetRegister].dirty;
 			virtualRegFile[offsetRegister].dirty = locked;
 		}const uint32_t offsetCheck = curStackOffset + (curCompilerTempSz == 0);
-		for(uint32_t wIdx = 0; wIdx < o1.val.value; wIdx++){
+		for(uint32_t wIdx = 0; wIdx < (o1.val.value >= (UINT32_MAX - 1) ? 1 : o1.val.value); wIdx++){
 			
 			if(o1.val.value - 1){
 				uint8_t readReg = getEmptyRegister(curStackOffset + wIdx * 4, registerPermanence, noCheck);
 				if(offsetRegister != -1){
-					emitOpcode(ldrw_imm_32); emitArgument(offsetRegister, 4);
-					emitArgument(readReg, 4); emitArgument(wIdx * 4, 12);
+					loadRegisterFromRegPointer(readReg, offsetRegister, wIdx * 4, sizeType);
 				}else{
-					loadRegisterFromStack(readReg, baseRdAddr + wIdx * 4);
+					loadRegisterFromStack(readReg, baseRdAddr + wIdx * 4, sizeType);
 				}
 			} else{
 				if(offsetRegister != -1){
 					uint8_t readReg = getEmptyRegister(curStackOffset + wIdx * 4, registerPermanence, noCheck);
-					loadRegisterFromStackR(readReg, offsetRegister);
+					loadRegisterFromStackR(readReg, offsetRegister, sizeType);
 				}else{
 					movedFromStack = 0;
 					const uint8_t r = moveOffsetToRegs(o2.val.value + wIdx * 4, o2.val.value + wIdx * 4, UINT16_MAX);
@@ -685,6 +739,7 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 		case opWriteback:{
 		int8_t addrReg = -1;  uint32_t addrConst; uint8_t addrd;
 		const operand o3 = *operands; o2 = *(operands - 1); o1 = *(operands - 2);
+		const uint8_t sizeType = o1.val.value == halfSz ? halfSize : (o1.val.value == byteSz ? byteSize : wordSize);
 		switch(o2.operandType){
 			case constant:
 			for(uint8_t r = 0; r < maxGPRegs; r++) if(virtualRegFile[r].stackOffset >= o2.val.stackOffset + o3.val.value && virtualRegFile[r].stackOffset < o2.val.stackOffset + o3.val.value + o1.val.value * 4) 
@@ -703,7 +758,7 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 			}
 			flushRegisters(); 
 		}const uint32_t offsetCheck = curStackOffset + (curCompilerTempSz == 0);
-		for(uint32_t wIdx = 0; wIdx < o1.val.value; wIdx++){
+		for(uint32_t wIdx = 0; wIdx < (o1.val.value >= (UINT32_MAX - 1) ? 1 : o1.val.value); wIdx++){
 			uint8_t readReg;
 			if(wIdx >= (o3.size + 3) >> 2){readReg = moveConstantToRegs(0, UINT32_MAX, UINT16_MAX); virtualRegFile[readReg].dirty = empty;}
 			else switch(o3.operandType){
@@ -716,12 +771,12 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 			}
 			if(addrReg > -1){
 				if(o1.val.value-1){
-					emitOpcode(strw_imm_32); emitArgument(addrReg, 4); emitArgument(readReg, 4); emitArgument(wIdx * 4, 4);
+					storeRegIntoStackRegPointer(readReg, addrReg, wIdx * 4, sizeType);
 				}else{
-					storeRegisterIntoStackR(readReg, addrReg);
+					storeRegisterIntoStackR(readReg, addrReg, sizeType);
 				}
 			}
-			else storeRegisterIntoStack(readReg, addrConst + wIdx * 4);
+			else storeRegisterIntoStack(readReg, addrConst + wIdx * 4, sizeType);
 			if(virtualRegFile[readReg].stackOffset >= curStackOffset - curCompilerTempSz && virtualRegFile[readReg].stackOffset < offsetCheck) virtualRegFile[readReg].dirty = empty;
 		}
 		if(addrReg > -1) virtualRegFile[addrReg].dirty = addrd;
@@ -731,6 +786,7 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 		case opWritebackArr:{
 		int8_t addrReg = -1;  uint32_t addrConst;
 		const operand o4 = *operands; const operand o3 = *(operands - 1); o2 = *(operands - 2); o1 = *(operands - 3);
+		const uint8_t sizeType = o1.val.value == halfSz ? halfSize : (o1.val.value == byteSz ? byteSize : wordSize);
 		uint32_t baseWbAddr = o2.val.stackOffset; int8_t offsetRegister = -1; uint8_t offd;
 		switch(o3.operandType){
 			case constant: baseWbAddr += o3.val.value; 
@@ -744,23 +800,22 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 			}else offd = virtualRegFile[offsetRegister].dirty;
 			virtualRegFile[offsetRegister].dirty = locked;
 		}const uint32_t offsetCheck = curStackOffset + (curCompilerTempSz == 0);
-		for(uint32_t wIdx = 0; wIdx < o1.val.value; wIdx++){
+		for(uint32_t wIdx = 0; wIdx < ((o1.val.value >= UINT32_MAX-1) ? 1 : o1.val.value); wIdx++){
 			uint8_t readReg; switch(o4.operandType){
 				case constant: readReg = moveConstantToRegs(wIdx ? 0 : o4.val.value, curStackOffset - curCompilerTempSz, UINT16_MAX); break;
 				case stackVar: if(wIdx >= (o4.val.stackOffset + 3) >> 2){readReg = moveConstantToRegs(0, curStackOffset - curCompilerTempSz, UINT16_MAX); break;} 
 			readReg = moveOffsetToRegs(o4.val.value + wIdx * 4, o4.val.value + wIdx * 4, registerPermanence); break;
 			} if(o1.val.value - 1){
 				if(offsetRegister != -1){
-					emitOpcode(strw_imm_32); emitArgument(offsetRegister, 4);
-					emitArgument(readReg, 4); emitArgument(wIdx * 4, 12);
+					storeRegIntoStackRegPointer(readReg, offsetRegister, wIdx * 4, sizeType);
 				}else{
-					storeRegisterIntoStack(readReg, baseWbAddr + wIdx * 4);
+					storeRegisterIntoStack(readReg, baseWbAddr + wIdx * 4, sizeType);
 				}
 			} else{
 				if(offsetRegister != -1){
-					storeRegisterIntoStackR(readReg, offsetRegister);
+					storeRegisterIntoStackR(readReg, offsetRegister, sizeType);
 				}else{
-					storeRegisterIntoStack(readReg, baseWbAddr);
+					storeRegisterIntoStack(readReg, baseWbAddr, sizeType);
 				}	
 			}if(virtualRegFile[readReg].stackOffset >= curStackOffset - curCompilerTempSz && virtualRegFile[readReg].stackOffset < offsetCheck) virtualRegFile[readReg].dirty = empty;
 		}virtualRegFile[offsetRegister].dirty = offd;
@@ -800,7 +855,7 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 					r2 = moveOffsetToRegs(o2.val.stackOffset + wIdx * 4, o2.val.stackOffset + wIdx * 4, o2.registerPreference);
 					r2d = virtualRegFile[r2].dirty; virtualRegFile[r2].dirty = locked;
 				}
-			}const uint32_t compilerSz = curStackOffset + curCompilerTempSz == 0;
+			}const uint32_t compilerSz = curStackOffset + (curCompilerTempSz == 0);
 			if(virtualRegFile[r1].stackOffset >= curStackOffset - curCompilerTempSz && virtualRegFile[r1].stackOffset < compilerSz)
 			virtualRegFile[r1].dirty = empty; else virtualRegFile[r1].dirty = r1d;
 			if(r2 != -1 && virtualRegFile[r2].stackOffset >= curStackOffset - curCompilerTempSz && virtualRegFile[r2].stackOffset < compilerSz)
@@ -833,7 +888,7 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 					r2 = moveOffsetToRegs(o2.val.stackOffset + wIdx * 4, o2.val.stackOffset + wIdx * 4, o2.registerPreference);
 					r2d = virtualRegFile[r2].dirty; virtualRegFile[r2].dirty = locked;
 				}
-			}const uint32_t compilerSz = curStackOffset + curCompilerTempSz == 0; virtualRegFile[r1].dirty = dirty;
+			}const uint32_t compilerSz = curStackOffset + (curCompilerTempSz == 0); virtualRegFile[r1].dirty = dirty;
 			if(r2 != -1 && virtualRegFile[r2].stackOffset >= curStackOffset - curCompilerTempSz && virtualRegFile[r2].stackOffset < compilerSz)
 			virtualRegFile[r2].dirty = empty; else virtualRegFile[r2].dirty = r2d;
 			if(r2 == -1) emitOpcode(returnImmOpcode(op.subtype)); else emitOpcode(returnRegOpcode(op.subtype));
@@ -907,11 +962,11 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 		if(r1 != -1){
 			emitOpcode(cmp_imm_32); emitArgument(r1, 4); emitArgument(0, 12);
 			emitOpcode(it_32); emitFlag(op.subtype == opLogicalAnd ? flag_ne : flag_eq);
-			virtualRegFile[r1].dirty = (virtualRegFile[r1].stackOffset >= curStackOffset - curCompilerTempSz && virtualRegFile[r1].stackOffset < curStackOffset) ? empty : r1d;
+			virtualRegFile[r1].dirty = isTemporary(virtualRegFile[r2].stackOffset) ? empty : r1d;
 		}
 		if(r2 != -1){
 			emitOpcode(cmp_imm_32); emitArgument(r2, 4); emitArgument(0, 12);
-			virtualRegFile[r2].dirty = (virtualRegFile[r2].stackOffset >= curStackOffset - curCompilerTempSz && virtualRegFile[r2].stackOffset < curStackOffset) ? empty : virtualRegFile[r2].dirty;
+			virtualRegFile[r2].dirty = isTemporary(virtualRegFile[r2].stackOffset) ? empty : virtualRegFile[r2].dirty;
 		}
 		virtualFlags.dirty = dirty; virtualFlags.stackOffset = curStackOffset; virtualFlags.flagType = flag_ne;
 		curStackOffset += 4; curCompilerTempSz += 4;
@@ -1004,7 +1059,7 @@ forceinline void restoreSnapshot(const registerSnapshot snapshot){
 			for(uint8_t r2 = 0; r2 < maxGPRegs; r2++) if(virtualRegFile[r2].stackOffset == snapshot.registerStatus[r] && virtualRegFile[r2].dirty != empty){
 				if(r2 != r){flushRegister(r); loadRegisterFromRegs(r, r2); virtualRegFile[r].dirty = clean; virtualRegFile[r2].dirty = empty;} goto continueLoop; 
 			}
-			flushRegister(r); loadRegisterFromStack(r, snapshot.registerStatus[r]); virtualRegFile[r].dirty = clean;
+			flushRegister(r); loadRegisterFromStack(r, snapshot.registerStatus[r], wordSize); virtualRegFile[r].dirty = clean;
 		} else flushRegister(r);
 		continueLoop:;
 	}
@@ -1127,8 +1182,16 @@ uint8_t assembleSource(const char* src, uint8_t* progOrigin){
 		operandStack[operandIdx++] = (operand){literal, 4, constant, 0, 0, registerPermanence};
 		break;
 		case sizeToken:
-		persistentTokens.foundAllocation = 1; allocationSz = 4;
-		break;
+		persistentTokens.foundAllocation = 1; 
+		switch(curToken.subtype){
+			case wordSize: allocationSz = 4; break;
+			case halfSize: 
+			allocationSz = halfSz;
+			operandStack[operandIdx++] = (operand){halfSz, 4, constant, 0, 0, registerPermanence}; break;
+			case byteSize: 
+			allocationSz = byteSz;
+			operandStack[operandIdx++] = (operand){byteSz, 4, constant, 0, 0, registerPermanence}; break;
+		} break;
 		case identifierToken:
 		if(persistentTokens.foundAllocation){
 			if(!(previousToken.type == sizeToken)) operandIdx--; persistentTokens.foundAllocation = 0;

@@ -99,6 +99,7 @@ word y = 6; // will most likely reuse x's register
 ## Pointer Usage
 
 Pointers are simply 1 word variables. This compiler is made for 32 bit systems, so therefore only accepts 32 bit pointers.
+Pointers have no intrinsic "type", but dereferencing works with one byte, one half-word, and any multiple of one word.
 
 ### DEREF
 
@@ -110,7 +111,9 @@ Dereferences can be specified as volatile to ensure reading from stack. Volatile
 // [size] deref [address];
 // [size] must be a constant. [address] can be a variable or constant
 1 deref 100;	// reads one word from absolute memory location 100. COULD use values already in registers
-1 volatile deref 100 // reads one word from absolute memory location 100. FORCES register sync and reads from stack.
+1 volatile deref 100; // reads one word from absolute memory location 100. FORCES register sync and reads from stack.
+byte deref 50; // reads one byte from absolute location 50
+half deref 12; // reads one half-word from absolute location 12
 word 1 pointer = 100;
 word 1 dereferenced_pointer = 1 deref pointer; // reads one word from absolute memory location stored in 'pointer', e.g. 100
 
@@ -125,7 +128,8 @@ deref can also be used to write back to memory locations.
 1 deref 100 = 5; // write 5 to the word at memory location 100. Careful, may be unaligned!
 word 1 x = 5; word 1 ref_x = ref x; // flush x to stack and grab reference
 1 deref ref_x = 10; // load 10 into x
-// NOTE: deref flushes all dirty registers to stack. USE POINTER OPERATIONS SPARINGLY.
+byte deref ref_x = 10; // write 10 to byte at location ref_x
+// NOTE: deref flushes all dirty registers to stack when [address] is a variable. USE POINTER OPERATIONS SPARINGLY.
 
 ```
 
@@ -340,6 +344,7 @@ The compiler assumes memory loads/stores performed with IN only affect the varia
 word 100 arr; // define array of 100 32-bit words
 word fifthWord = 1 in arr (word 4); // get fifth element of the array. This compiles down to a single load
 1 in arr (word 4) = 7; // write 7 to the 5th element/word of arr
+byte in arr (word 4) = 7; // write to a byte in the array instead of word
 ```
 
 ---
