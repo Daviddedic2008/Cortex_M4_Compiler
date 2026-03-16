@@ -2,7 +2,7 @@
 
 **Lightweight language made for 32 bit arithmetic and data structures**
 
-Single pass compiler, greedy register allocator\*, backpatching for jumps, constant folding, lazy register storage, lazy flag storage.
+Single pass compiler\***1**, greedy register allocator\***2**, backpatching for jumps, constant folding, lazy register storage, lazy flag storage.
 This compiler is machine-dependent and relies on a standard "word" size, which is 32 bits for the Cortex M4. This is done to force the programmer to optimize properly.
 Memory footprint is small, with the binary being <64KB and the overall RAM usage(accounting for stack too) being <32KB.
 
@@ -12,8 +12,10 @@ The language is perfect for making small scripts that interface with GPIO, as th
 Since the compiler is small enough to theoretically run on the Cortex M4 itself with room to spare, this language could be used in a pseudo-OS on that MCU.
 It could easily self-host on much more constrained systems, but I do not know of any lower spec ARM thumb-2 systems.
 
-\*NOTE: Register allocator spills based on loop depth, prioritizing register used deep in loops as well as recently used registers.
+\*NOTE 1: Register allocator spills based on loop depth, prioritizing register used deep in loops as well as recently used registers.
 Now, here's the actual documentation:
+
+\* NOTE 2: Although the compiler is mostly single-pass, some stuff(like hex emission) relies on stacks that are dynamically filled/flushed to allow for more comprehensive peephole optimizations.
 
 ---
 

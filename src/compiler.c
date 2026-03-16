@@ -170,7 +170,151 @@ enum armFlags{
 	flag_eq, flag_ne, flag_lt, flag_gt, flag_ge, flag_le
 };
 
-uint32_t progAddr;
+typedef struct{
+	uint8_t code; uint8_t numArgs;
+	uint16_t args[3];
+}instruction;
+
+#define makeInstruction(code) (instruction){.code = code, .numArgs = 0};
+
+uint32_t progAddr; uint8_t* outputBuf;
+instruction instructionFrame[8]; uint8_t numInstructions = 0;
+
+forceinline uint32_t setBits(uint32_t base, const uint32_t value, const uint8_t startBit){
+	const uint32_t mask = value << startBit; return base | mask;
+}	
+forceinline void emitHex() {
+	const uint8_t code = instructionFrame[numInstructions - 1].code;
+	const uint16_t* args = instructionFrame[numInstructions - 1].args;
+	
+	uint32_t emit = 0;
+	uint8_t wrSz = 4;
+	switch(code) {
+	case movw_reg_reg_32:
+	emit = setBits(emit, 0b1110101001001111, 16);
+	emit = setBits(emit, args[1], 8);
+	emit = setBits(emit, args[0], 0); 
+	break;
+	case movw_lit_32: 
+	case movt_lit_32:
+	emit = setBits(emit, 0b11110, 27);
+	emit = setBits(emit, (args[1] >> 11) & 1, 26);
+	emit = setBits(emit, 0b100, 23);
+	emit = setBits(emit, code == movt_lit_32, 22);
+	emit = setBits(emit, 0b10, 20);
+	emit = setBits(emit, (args[1] >> 12) & 0b1111, 16);
+	emit = setBits(emit, (args[1] >> 8) & 0b111, 12);
+	emit = setBits(emit, args[0], 8);
+	emit = setBits(emit, args[1] & 0b11111111, 0); 
+	break;
+	case ldrw_imm_32: case strw_imm_32: case ldrbw_imm_32: 
+	case strbw_imm_32: case ldrhw_imm_32: case strhw_imm_32:
+	emit = setBits(emit, 0b1111100, 25);
+	emit = setBits(emit, (code == ldrhw_imm_32 || code == strhw_imm_32) ? 1 : (code == ldrw_imm_32 || code == strw_imm_32 ? 2 : 0), 23);
+	emit = setBits(emit, (code == ldrw_imm_32 || code == ldrbw_imm_32 || code == ldrhw_imm_32), 22);
+	emit = setBits(emit, 1, 20);
+	emit = setBits(emit, args[0], 16);
+	emit = setBits(emit, args[1], 12);
+	emit = setBits(emit, args[2], 0); 
+	break;
+	case ldrw_reg_32: case strw_reg_32: case ldrbw_reg_32: 
+	case strbw_reg_32: case ldrhw_reg_32: case strhw_reg_32:
+	emit = setBits(emit, 0b1111100, 25);
+	emit = setBits(emit, (code == ldrhw_reg_32 || code == strhw_reg_32) ? 1 : (code == ldrw_reg_32 || code == strw_reg_32 ? 2 : 0), 23);
+	emit = setBits(emit, (code == ldrw_reg_32 || code == ldrbw_reg_32 || code == ldrhw_reg_32), 22);
+	emit = setBits(emit, args[0], 16);
+	emit = setBits(emit, args[1], 12);
+	emit = setBits(emit, args[2], 0); 
+	break;
+	case addw_imm_32: case subw_imm_32: case subs_imm_32:
+	emit = setBits(emit, 0b11110, 27);
+	emit = setBits(emit, (args[2] >> 11) & 1, 26);
+	emit = setBits(emit, (code == addw_imm_32 ? 0b01000 : 0b01010) | (code == subs_imm_32), 20);
+	emit = setBits(emit, args[0], 16);
+	emit = setBits(emit, (args[2] >> 8) & 0b111, 12);
+	emit = setBits(emit, args[1], 8);
+	emit = setBits(emit, args[2] & 0xFF, 0); 
+	break;
+	case addw_reg_32: case subw_reg_32: case subs_reg_32:
+	emit = setBits(emit, 0b1110101, 25);
+	emit = setBits(emit, (code == addw_reg_32 ? 0b1000 : 0b1101) | (code == subs_reg_32), 20);
+	emit = setBits(emit, args[0], 16);
+	emit = setBits(emit, args[1], 8);
+	emit = setBits(emit, args[2], 0); 
+	break;
+	case lsr_imm_32: 
+	case lsl_imm_32:
+	emit = setBits(emit, 0b1110101001001111, 16);
+	emit = setBits(emit, (args[2] >> 2) & 0b111, 12);
+	emit = setBits(emit, args[1], 8);
+	emit = setBits(emit, (args[2] & 0b11) << 6 | (code == lsr_imm_32 ? 0b100000 : 0), 0);
+	emit = setBits(emit, args[0], 0); 
+	break;
+	case mulw_reg_32: 
+	case divw_reg_32:
+	emit = setBits(emit, 0b11111011, 24);
+	emit = setBits(emit, code == divw_reg_32 ? 0b1001 : 0, 20);
+	emit = setBits(emit, args[0], 16);
+	emit = setBits(emit, 0b1111, 12);
+	emit = setBits(emit, args[1], 8);
+	emit = setBits(emit, args[2], 0); 
+	break;
+	case ite_32: 
+	case it_32: 
+	wrSz = 2; 
+	emit = setBits(emit, 0xBF00 | (args[0] << 4) | (code == ite_32 ? 0b0110 : 0b1000), 0); 
+	break;
+	case cmp_reg_32: 
+	case cmp_imm_32:
+	emit = setBits(emit, code == cmp_imm_32 ? 0xF1B00F00 : 0xEBB00F00, 0);
+	emit = setBits(emit, args[0], 16);
+	emit = setBits(emit, args[1], 0); 
+	break;
+	case andw_reg_32: case andw_imm_32: 
+	case orrs_reg_32: case orrs_imm_32: 
+	case eors_reg_32: case eors_imm_32:
+	emit = setBits(emit, (code == andw_reg_32 || code == andw_imm_32) ? 0xEA000000 : (code == orrs_reg_32 || code == orrs_imm_32 ? 0xEA400000 : 0xEA800000), 0);
+	emit = setBits(emit, args[0], 16);
+	emit = setBits(emit, args[1], 8);
+	emit = setBits(emit, args[2], 0); 
+	break;
+	case mvn_imm_32: 
+	case mvn_reg_32:
+	emit = setBits(emit, code == mvn_imm_32 ? 0xF06F0000 : 0xEA6F0000, 0);
+	emit = setBits(emit, args[0], 8);
+	emit = setBits(emit, args[1], 0); 
+	break;
+	case b_imm_32: 
+	case bc_imm_32:
+	emit = setBits(emit, (code == bc_imm_32 ? 0xF0008000 : 0xF0009000), 0);
+	emit = setBits(emit, args[0], 0); 
+	break;
+	case ldrb_imm_16: case strb_imm_16: case ldrh_imm_16: 
+	case strh_imm_16: case ldr_imm_16: case str_imm_16: 
+	wrSz = 2;
+	emit = setBits(emit, (code == ldrb_imm_16 ? 0x7800 : code == strb_imm_16 ? 0x7000 : code == ldrh_imm_16 ? 0x8800 : code == strh_imm_16 ? 0x8000 : code == ldr_imm_16 ? 0x6800 : 0x6000), 0);
+	emit = setBits(emit, args[2] << 6 | args[0] << 3 | args[1], 0); 
+	break;
+	case b_imm_16: 
+	case bc_imm_16: 
+	wrSz = 2;
+	emit = setBits(emit, code == b_imm_16 ? 0xE000 : 0xD000, 0);
+	emit = setBits(emit, args[0], 0); 
+	break;
+	case mov_lit_16: 
+	wrSz = 2;
+	emit = setBits(emit, 0x2000 | (args[0] << 8) | (args[1] & 0xFF), 0); 
+	break;
+	case mov_reg_reg_16: 
+	wrSz = 2;
+	emit = setBits(emit, 0x4600 | (args[1] << 3) | args[0], 0); 
+	break;
+	case add_reg_16: 
+	wrSz = 2;
+	emit = setBits(emit, 0x4400 | (args[1] << 3) | args[0], 0); 
+	break;
+	} for(uint8_t b = 0; b < wrSz; b++) outputBuf[progAddr++] = (emit >> (b * 8)) & 0xFF;
+}
 
 void emitOpcode(const uint8_t code) {
 	switch (code) {
@@ -226,9 +370,13 @@ void emitOpcode(const uint8_t code) {
 	case mov_reg_reg_16: printf("MOV_REG_REG_16"); break;
 	case b_imm_16:		 printf("B_IMM_16"); break;
 	default:             printf("UNKNOWN_OP"); break;
-	} progAddr += code > lim32 ? 2 : 4;
+	} if(numInstructions) emitHex();
+	instructionFrame[numInstructions++] = makeInstruction(code);
 	printf("\n");
 	fflush(stdout);
+}
+forceinline void flushInstructionBuffer(){
+	if(numInstructions) emitHex(1);
 }
 
 void emitFlag(const uint8_t flag) {
@@ -246,9 +394,12 @@ void emitModifier(const uint8_t mod){
 	printf(mod ? "NO CARRY\n" : "CARRY\n");
 }
 
+#define curInst instructionFrame[numInstructions-1]
 void emitArgument(const uint32_t arg, const uint8_t sz) {
+	curInst.args[curInst.numArgs++] = arg;
 	printf("ARG %d\n", arg);
 }
+#undef curInst
 
 enum registerStorageStatus{
 	clean = 1, dirty = 2, locked = 3,
@@ -522,7 +673,7 @@ variableMetadata retrieveLocalVariable(const char* name, uint8_t len){
 }
 
 //#############################################################################################################################################
-// OPERATION PARSER/HEX EMITTER
+// OPERATION PARSER
 
 forceinline uint32_t evalImm(const uint32_t o1, const uint32_t o2, const uint8_t subtype){
 	switch(subtype){
@@ -620,6 +771,7 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 				break;
 				case flagVar:
 				r = moveFlagToRegs(o2.val.stackOffset + wIdx * 4, o2.val.stackOffset + wIdx * 4, o2.flagType, registerPermanence);
+				if(isTemporary(o2.val.stackOffset + wIdx * 4)) virtualFlags.dirty = empty;
 			} if(movedFromStack) virtualRegFile[r].stackOffset = o1.val.stackOffset + wIdx * 4;
 			if(!o1.forceFlush){
 				if((o2.val.stackOffset + wIdx * 4) < (curStackOffset - curCompilerTempSz) || (o2.val.stackOffset + wIdx * 4) >= curStackOffset){
@@ -965,7 +1117,7 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 		if(r1 != -1){
 			emitOpcode(cmp_imm_32); emitArgument(r1, 4); emitArgument(0, 12);
 			emitOpcode(it_32); emitFlag(op.subtype == opLogicalAnd ? flag_ne : flag_eq);
-			virtualRegFile[r1].dirty = isTemporary(virtualRegFile[r2].stackOffset) ? empty : r1d;
+			virtualRegFile[r1].dirty = isTemporary(virtualRegFile[r1].stackOffset) ? empty : r1d;
 		}
 		if(r2 != -1){
 			emitOpcode(cmp_imm_32); emitArgument(r2, 4); emitArgument(0, 12);
@@ -1166,7 +1318,7 @@ forceinline void clearCompilerTemporaries(){
 }
 uint8_t assembleSource(const char* src, uint8_t* progOrigin){
 	initializeVirtualFlags(); initializeVirtualRegs(); curScope = 0; progAddr = 0;
-	setSource(src); int8_t branchTypeFound = -1;
+	setSource(src); int8_t branchTypeFound = -1; outputBuf = progOrigin;
 	operatorIdx = 0; operandIdx = 0; relativeLoopIdx = 0; relativeIfIdx = 0;
 	uint32_t registerPermanence = 0, allocationSz = 0; 
 	persistentToken persistentTokens; token previousToken = (token){(void*)0, 0, nullToken, 0}; uint16_t precedence = 0;
@@ -1317,5 +1469,7 @@ uint8_t assembleSource(const char* src, uint8_t* progOrigin){
 		if(curToken.type != nullToken) previousToken = curToken;
 	}while(curToken.type != nullToken);
 	if(precedence || curScope || (previousToken.type != endLine && !(previousToken.type == clampToken && previousToken.subtype == curlyBR))) return delimiterMismatch;
+	flushInstructionBuffer();
+	for(uint32_t b = 0; b < progAddr; b++) printf("%x\n", outputBuf[b]);
 	return noError;
 }
