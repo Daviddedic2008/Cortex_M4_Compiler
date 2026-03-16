@@ -112,17 +112,17 @@ Dereferences can be specified as volatile to ensure reading from stack. Volatile
 ```rust
 // [size] deref [address];
 // [size] must be a constant. [address] can be a variable or constant
-1 deref 100;	// reads one word from absolute memory location 100. COULD use values already in registers
+1 deref 100;	// reads one word from relative memory location 100. COULD use values already in registers
 1 volatile deref 100; // reads one word from absolute memory location 100. FORCES register sync and reads from stack.
-byte deref 50; // reads one byte from absolute location 50
-half deref 12; // reads one half-word from absolute location 12
+byte deref 50; // reads one byte from relative location 50
+half deref 12; // reads one half-word from relative location 12
 word 1 pointer = 100;
-word 1 dereferenced_pointer = 1 deref pointer; // reads one word from absolute memory location stored in 'pointer', e.g. 100
+word 1 dereferenced_pointer = 1 deref pointer; // reads one word from relative memory location stored in 'pointer', e.g. 100
 
 ```
 
 **IMPORTANT NOTE**
-deref can also be used to write back to memory locations.
+DEREF can also be used to write back to memory locations.
 
 ```rust
 // [size] deref [address] = [value];
@@ -134,6 +134,10 @@ byte deref ref_x = 10; // write 10 to byte at location ref_x
 // NOTE: deref flushes all dirty registers to stack when [address] is a variable. USE POINTER OPERATIONS SPARINGLY.
 
 ```
+
+**IMPORTANT NODE**
+Base DEREF uses relative addresses, meaning it's best suited for optimized variable accesses.
+To access absolute addresses, use the VOLATILE keyword.
 
 ### REF
 

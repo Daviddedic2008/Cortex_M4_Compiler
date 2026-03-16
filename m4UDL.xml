@@ -27,7 +27,7 @@
             <Keywords name="Keywords1">if else while break continue goto and or</Keywords>
             <Keywords name="Keywords2">word flush volatile free byte half</Keywords>
             <Keywords name="Keywords3">equals greater less not</Keywords>
-            <Keywords name="Keywords4">deref ref in argument return</Keywords>
+            <Keywords name="Keywords4">deref ref in argument return absolute</Keywords>
             <Keywords name="Keywords5"></Keywords>
             <Keywords name="Keywords6"></Keywords>
             <Keywords name="Keywords7"></Keywords>

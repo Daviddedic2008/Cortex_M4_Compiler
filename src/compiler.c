@@ -160,14 +160,11 @@ typedef enum opcode {
 
 #define lim32 bc_imm_32
 
-enum ArmCond{
-    cond_eq = 0x0, cond_ne = 0x1,
-    cond_lt = 0xB, cond_ge = 0xA,
-    cond_al = 0xE
-};
-
 enum armFlags{
 	flag_eq, flag_ne, flag_lt, flag_gt, flag_ge, flag_le
+};
+const uint8_t armFlagCodes[6] = {
+	[flag_eq] = 0x0, [flag_ne] = 0x1, [flag_lt] = 0xb, [flag_gt] = 0xc, [flag_ge] = 0xa, [flag_le] = 0xd
 };
 
 typedef struct{
@@ -177,7 +174,7 @@ typedef struct{
 
 #define makeInstruction(code) (instruction){.code = code, .numArgs = 0};
 
-uint32_t progAddr; uint8_t* outputBuf;
+uint32_t progAddr; uint8_t* outputBuf; uint8_t modifierFrame;
 instruction instructionFrame[8]; uint8_t numInstructions = 0;
 
 forceinline uint32_t setBits(uint32_t base, const uint32_t value, const uint8_t startBit){
@@ -186,7 +183,6 @@ forceinline uint32_t setBits(uint32_t base, const uint32_t value, const uint8_t 
 forceinline void emitHex() {
 	const uint8_t code = instructionFrame[numInstructions - 1].code;
 	const uint16_t* args = instructionFrame[numInstructions - 1].args;
-	
 	uint32_t emit = 0;
 	uint8_t wrSz = 4;
 	switch(code) {
@@ -237,7 +233,7 @@ forceinline void emitHex() {
 	break;
 	case addw_reg_32: case subw_reg_32: case subs_reg_32:
 	emit = setBits(emit, 0b1110101, 25);
-	emit = setBits(emit, (code == addw_reg_32 ? 0b1000 : 0b1101) | (code == subs_reg_32), 20);
+	emit = setBits(emit, (code == addw_reg_32 ? (modifierFrame ? 0b1010 : 0b1000) : (modifierFrame ? 0b1011 : 0b1101)) | (code == subs_reg_32), 20);
 	emit = setBits(emit, args[0], 16);
 	emit = setBits(emit, args[1], 8);
 	emit = setBits(emit, args[2], 0); 
@@ -290,28 +286,23 @@ forceinline void emitHex() {
 	emit = setBits(emit, args[0], 0); 
 	break;
 	case ldrb_imm_16: case strb_imm_16: case ldrh_imm_16: 
-	case strh_imm_16: case ldr_imm_16: case str_imm_16: 
-	wrSz = 2;
+	case strh_imm_16: case ldr_imm_16: case str_imm_16: wrSz = 2;
 	emit = setBits(emit, (code == ldrb_imm_16 ? 0x7800 : code == strb_imm_16 ? 0x7000 : code == ldrh_imm_16 ? 0x8800 : code == strh_imm_16 ? 0x8000 : code == ldr_imm_16 ? 0x6800 : 0x6000), 0);
 	emit = setBits(emit, args[2] << 6 | args[0] << 3 | args[1], 0); 
 	break;
 	case b_imm_16: 
-	case bc_imm_16: 
-	wrSz = 2;
+	case bc_imm_16: wrSz = 2;
 	emit = setBits(emit, code == b_imm_16 ? 0xE000 : 0xD000, 0);
 	emit = setBits(emit, args[0], 0); 
 	break;
-	case mov_lit_16: 
-	wrSz = 2;
+	case mov_lit_16: wrSz = 2;
 	emit = setBits(emit, 0x2000 | (args[0] << 8) | (args[1] & 0xFF), 0); 
 	break;
-	case mov_reg_reg_16: 
-	wrSz = 2;
+	case mov_reg_reg_16: wrSz = 2;
 	emit = setBits(emit, 0x4600 | (args[1] << 3) | args[0], 0); 
 	break;
-	case add_reg_16: 
-	wrSz = 2;
-	emit = setBits(emit, 0x4400 | (args[1] << 3) | args[0], 0); 
+	case add_reg_16: wrSz = 2;
+	emit = setBits(emit, (modifierFrame ? 0x4140 : 0x4400) | (args[1] << 3) | args[0], 0); 
 	break;
 	} for(uint8_t b = 0; b < wrSz; b++) outputBuf[progAddr++] = (emit >> (b * 8)) & 0xFF;
 }
@@ -379,7 +370,22 @@ forceinline void flushInstructionBuffer(){
 	if(numInstructions) emitHex(1);
 }
 
-void emitFlag(const uint8_t flag) {
+forceinline void emitModifier(const uint8_t mod){
+	printf(mod ? "NO CARRY\n" : "CARRY\n");
+	modifierFrame = mod;
+}
+
+#define curInst instructionFrame[numInstructions-1]
+forceinline void hexArg(const uint32_t arg){
+	curInst.args[curInst.numArgs++] = arg;
+}
+#undef curInst
+void emitArgument(const uint32_t arg, const uint8_t sz) {
+	hexArg(arg);
+	printf("ARG %d\n", arg);
+}
+
+forceinline void emitFlag(const uint8_t flag) {
 	switch(flag){
 		case flag_gt: printf("FLAG GT\n"); break;
 		case flag_ge: printf("FLAG GE\n"); break;
@@ -387,19 +393,11 @@ void emitFlag(const uint8_t flag) {
 		case flag_ne: printf("FLAG NE\n"); break;
 		case flag_le: printf("FLAG LE\n"); break;
 		case flag_lt: printf("FLAG LT\n");
-	}
+	} hexArg(armFlagCodes[flag]);
 }
 
-void emitModifier(const uint8_t mod){
-	printf(mod ? "NO CARRY\n" : "CARRY\n");
-}
-
-#define curInst instructionFrame[numInstructions-1]
-void emitArgument(const uint32_t arg, const uint8_t sz) {
-	curInst.args[curInst.numArgs++] = arg;
-	printf("ARG %d\n", arg);
-}
-#undef curInst
+//#############################################################################################################################################
+// INSTRUCTION GENERATION
 
 enum registerStorageStatus{
 	clean = 1, dirty = 2, locked = 3,
@@ -1469,7 +1467,7 @@ uint8_t assembleSource(const char* src, uint8_t* progOrigin){
 		if(curToken.type != nullToken) previousToken = curToken;
 	}while(curToken.type != nullToken);
 	if(precedence || curScope || (previousToken.type != endLine && !(previousToken.type == clampToken && previousToken.subtype == curlyBR))) return delimiterMismatch;
-	flushInstructionBuffer();
-	for(uint32_t b = 0; b < progAddr; b++) printf("%x\n", outputBuf[b]);
+	flushInstructionBuffer(); printf("\nbinary output\n");
+	for(uint32_t b = 0; b < progAddr; b++) printf("%x ", outputBuf[b]);
 	return noError;
 }
