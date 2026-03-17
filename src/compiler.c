@@ -1237,7 +1237,7 @@ forceinline void restoreSnapshot(const registerSnapshot snapshot){
 	for(uint8_t r = 0; r < maxGPRegs; r++){
 		if(snapshot.registerStatus[r] != UINT32_MAX){
 			for(uint8_t r2 = 0; r2 < maxGPRegs; r2++) if(virtualRegFile[r2].stackOffset == snapshot.registerStatus[r] && virtualRegFile[r2].dirty != empty){
-				if(r2 != r){flushRegister(r); loadRegisterFromRegs(r, r2); virtualRegFile[r].dirty = clean; virtualRegFile[r2].dirty = empty;} goto continueLoop; 
+				if(r2 != r){flushRegister(r); loadRegisterFromRegs(r, r2); virtualRegFile[r].dirty = virtualRegFile[r2].dirty; virtualRegFile[r2].dirty = empty;} goto continueLoop; 
 			}
 			flushRegister(r); loadRegisterFromStack(r, snapshot.registerStatus[r], wordSize); virtualRegFile[r].dirty = clean;
 		} else flushRegister(r);

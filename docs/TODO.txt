@@ -2,8 +2,9 @@
 
 * [being worked on]
 
+* peephole opcode reordering(remove some pipeline bubbles)
+* macros
 
-* improve register snapshot system to ensure dirty bit tracking properly
 
 
 
@@ -21,3 +22,4 @@
 ~ add else, continue, break
 ~ start adding actual hex emission, the current IR is VERY close to a true binary, but requires some bit shifting stuff.
 	~ associated issue: make sure the backpatches actually patch the PROPER bits, not just the proper memory location.
+~ improve register snapshot system to ensure dirty bit tracking properly
