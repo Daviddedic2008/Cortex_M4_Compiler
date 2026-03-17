@@ -4,8 +4,7 @@
 
 
 * improve register snapshot system to ensure dirty bit tracking properly
-* start adding actual hex emission, the current IR is VERY close to a true binary, but requires some bit shifting stuff.
-	* associated issue: make sure the backpatches actually patch the PROPER bits, not just the proper memory location.
+
 
 
 
@@ -20,3 +19,5 @@
 ~ make sure backpatching uses proper bit packing
 ~ add increment and decrement ops, of type += and -=. These should write back to old registers instead of always finding new ones
 ~ add else, continue, break
+~ start adding actual hex emission, the current IR is VERY close to a true binary, but requires some bit shifting stuff.
+	~ associated issue: make sure the backpatches actually patch the PROPER bits, not just the proper memory location.
