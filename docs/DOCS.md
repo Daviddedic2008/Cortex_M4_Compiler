@@ -2,7 +2,7 @@
 
 **Lightweight language made for 32 bit arithmetic and data structures**
 
-Single pass compiler\***1**, greedy register allocator\***2**, backpatching for jumps, constant folding, lazy register storage, lazy flag storage.
+Single pass compiler  \***1**\*, greedy register allocator  \***2**\*, backpatching for jumps, constant folding, lazy register storage, lazy flag storage.
 This compiler is machine-dependent and relies on a standard "word" size, which is 32 bits for the Cortex M4. This is done to force the programmer to optimize properly.
 Memory footprint is small, with the binary being <64KB and the overall RAM usage(accounting for stack too) being <32KB.
 
