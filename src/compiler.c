@@ -770,7 +770,7 @@ forceinline uint8_t getOppositeFlag(const uint8_t flag){
 forceinline uint8_t numOperands(const uint8_t subtype){
 	switch(subtype){
 		case opWritebackArr: return 4;
-		case opWriteback: case opDereferenceArr: return 3;
+		case opWriteback: case opWritebackVolatile: case opDereferenceArr: return 3;
 		case opFree: case opLogicalNot: case opBitwiseNot: case opReference: return 1;
 		default: return 2;
 	}
@@ -821,7 +821,31 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 		o1 = *operands;
 		return (operand){o1.val.stackOffset, 4, constant, 0, 0, UINT16_MAX};
 		}
-		case opDereferenceVolatile: case opDereference:{
+		case opDereferenceVolatile:{
+		o2 = *operands; o1 = *(operands - 1);
+		const uint8_t sizeType = o1.val.value == halfSz ? halfSize : (o1.val.value == byteSz ? byteSize : wordSize);
+		int8_t addrReg = -1; uint8_t addrd; const uint32_t num32BitTransfers = o1.val.value >= (UINT32_MAX - 1) ? 1 : o1.val.value;
+		switch(o2.operandType){
+			case constant:
+			for(uint8_t r = 0; r < maxGPRegs; r++) if(virtualRegFile[r].stackOffset >= o2.val.value && virtualRegFile[r].stackOffset < o2.val.value + num32BitTransfers * 4) flushRegister(r);
+			addrReg = moveConstantToRegs(o2.val.value, curStackOffset - curCompilerTempSz, registerPermanence);
+			addrd = empty; break;
+			case stackVar: movedFromStack = 0; flushRegisters();
+			addrReg = moveOffsetToRegs(o2.val.stackOffset, o2.val.stackOffset, registerPermanence);
+			addrd = isTemporary(o2.val.stackOffset) ? empty : virtualRegFile[addrReg].dirty;
+			virtualRegFile[addrReg].dirty = locked;
+		}
+		for(uint8_t r = 0; r < maxGPRegs; r++){
+			if((virtualRegFile[r].stackOffset == o2.val.value && op.subtype == opDereferenceVolatile) || o2.operandType == stackVar)
+			flushRegister(r);
+		} uint32_t wr = num32BitTransfers; do{ wr--;
+			const uint8_t rEmpty = getEmptyRegister(curStackOffset + wr * 4, registerPermanence, noCheck);
+			loadRegisterFromRegPointer(rEmpty, addrReg, wr * 4, sizeType);
+		}while(wr > 0);
+		curCompilerTempSz += num32BitTransfers * 4; curStackOffset += num32BitTransfers* 4;
+		return (operand){curStackOffset - num32BitTransfers * 4, num32BitTransfers * 4, stackVar, 0, 0, registerPermanence};
+		}
+		case opDereference:{
 		o2 = *operands; o1 = *(operands - 1);
 		const uint8_t sizeType = o1.val.value == halfSz ? halfSize : (o1.val.value == byteSz ? byteSize : wordSize);
 		int8_t addrReg = -1; uint8_t addrd; uint32_t constantOffset;
@@ -914,7 +938,7 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 		curStackOffset += num32BitTransfers << 2; curCompilerTempSz += num32BitTransfers << 2;
 		return (operand){curStackOffset - num32BitTransfers * 4, num32BitTransfers * 4, stackVar, 0, 0, registerPermanence};
 		}
-		case opWriteback:{
+		case opWriteback: case opWritebackVolatile:{
 		int8_t addrReg = -1;  uint32_t addrConst; uint8_t addrd;
 		const operand o3 = *operands; o2 = *(operands - 1); o1 = *(operands - 2);
 		const uint8_t sizeType = o1.val.value == halfSz ? halfSize : (o1.val.value == byteSz ? byteSize : wordSize);
@@ -922,11 +946,12 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 		switch(o2.operandType){
 			case constant:
 			for(uint8_t r = 0; r < maxGPRegs; r++) if(virtualRegFile[r].stackOffset >= o2.val.stackOffset + o3.val.value && virtualRegFile[r].stackOffset < o2.val.stackOffset + o3.val.value + num32BitTransfers* 4) 
-			virtualRegFile[r].dirty = empty; addrConst = o2.val.value; break;
+			virtualRegFile[r].dirty = empty; addrConst = o2.val.value; 
+			if(op.subtype == opWritebackVolatile) addrReg = moveConstantToRegs(o2.val.value, curStackOffset - curCompilerTempSz, registerPermanence); break;
 			case stackVar:
 			movedFromStack = 0;
 			addrReg = moveOffsetToRegs(o2.val.stackOffset, o2.val.stackOffset, registerPermanence);
-			if(num32BitTransfers == 1){
+			if(num32BitTransfers == 1 || op.subtype == opWritebackVolatile){
 				addrd = virtualRegFile[addrReg].dirty;
 				virtualRegFile[addrReg].dirty = locked;
 			}
@@ -935,7 +960,7 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 				virtualRegFile[addrReg].dirty = locked; addrd = empty;
 				emitOpcode(subw_imm_32); emitArgument(addrReg, 4); emitArgument(stackPointerReg, 4); emitArgument(addrReg, 4);
 			}
-			flushRegisters(); 
+			flushRegisters();
 		}const uint32_t offsetCheck = curStackOffset + (curCompilerTempSz == 0);
 		for(uint32_t wIdx = 0; wIdx < num32BitTransfers; wIdx++){
 			uint8_t readReg;
@@ -949,7 +974,7 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 				break;
 			}
 			if(addrReg > -1){
-				if(num32BitTransfers-1){
+				if(num32BitTransfers-1 || op.subtype == opWritebackVolatile){
 					storeRegIntoStackRegPointer(readReg, addrReg, wIdx * 4, sizeType);
 				}else{
 					storeRegisterIntoStackR(readReg, addrReg, sizeType);
@@ -1272,6 +1297,7 @@ forceinline uint8_t combineOperators(uint8_t opIdx){
 		switch(operatorStack[opIdx-1].subtype){
 			case opDereference: operatorStack[--opIdx].subtype = opWriteback; break;
 			case opDereferenceArr: operatorStack[--opIdx].subtype = opWritebackArr; break;
+			case opDereferenceVolatile: operatorStack[--opIdx].subtype = opWritebackVolatile; break;
 			case opAdd: operatorStack[--opIdx].subtype = opIncrement; break;
 			case opSub: operatorStack[--opIdx].subtype = opDecrement; break;
 			case opMul: operatorStack[--opIdx].subtype = opScaleM; break;
