@@ -156,6 +156,36 @@ typedef enum opcode {
 	ldrb_imm_16, strb_imm_16, ldrh_imm_16, strh_imm_16,
 	b_imm_16, b_reg_16, bc_imm_16, bc_reg_16, mov_lit_16, ldr_imm_16, ldr_gpr_imm_16, str_imm_16, mov_reg_reg_16, add_reg_16
 }opcode;
+enum ldOrStr{noLdStr, isLoad, isStore};
+typedef struct{
+	uint8_t destReg : 2;
+	uint8_t readRegs : 3;
+	uint8_t isLoadOrStore : 2;
+}opcodeTag;
+const opcodeTag opcodeTags[57] = {
+    [movw_reg_reg_32] = {1, 2}, [movw_lit_32] = {1, 0}, [movt_lit_32] = {1, 0},
+
+    [ldrw_imm_32]  = {2, 1, isLoad}, [ldrw_reg_32]  = {2, 5, isLoad}, 
+    [ldrbw_imm_32] = {2, 1, isLoad}, [ldrbw_reg_32] = {2, 5, isLoad}, 
+    [ldrhw_imm_32] = {2, 1, isLoad}, [ldrhw_reg_32] = {2, 5, isLoad},
+    [ldr_imm_16]   = {2, 1, isLoad}, [ldr_gpr_imm_16] = {2, 1, isLoad}, [ldrb_imm_16] = {2, 1, isLoad}, [ldrh_imm_16] = {2, 1, isLoad},
+
+    [strw_imm_32]  = {0, 3, isStore}, [strw_reg_32]  = {0, 7, isStore},
+    [strbw_imm_32] = {0, 3, isStore}, [strbw_reg_32] = {0, 7, isStore},
+    [strhw_imm_32] = {0, 3, isStore}, [strhw_reg_32] = {0, 7, isStore},
+    [str_imm_16]   = {0, 3, isStore}, [strb_imm_16]  = {0, 3, isStore}, [strh_imm_16] = {0, 3, isStore},
+
+    [subw_imm_32] = {0, 2, noLdStr}, [addw_imm_32] = {0, 2, noLdStr}, [subw_reg_32] = {0, 6, noLdStr}, [addw_reg_32] = {0, 6, noLdStr},
+    [subs_imm_32] = {0, 2, noLdStr}, [subs_reg_32] = {0, 6, noLdStr}, [mulw_reg_32] = {0, 6, noLdStr}, [divw_reg_32] = {0, 6, noLdStr},
+    [lsr_imm_32]  = {0, 2, noLdStr}, [lsl_imm_32]  = {0, 2, noLdStr}, [lsr_reg_32]  = {0, 6, noLdStr}, [lsl_reg_32]  = {0, 6, noLdStr},
+    [eors_reg_32] = {0, 6, noLdStr}, [eors_imm_32] = {0, 2, noLdStr}, [orrs_reg_32] = {0, 6, noLdStr}, [andw_imm_32] = {0, 2, noLdStr}, 
+    [andw_reg_32] = {0, 6, noLdStr}, [orrs_imm_32] = {0, 2, noLdStr}, [mvn_imm_32]  = {0, 0, noLdStr}, [mvn_reg_32]  = {0, 2, noLdStr},
+    [mov_lit_16]  = {0, 0, noLdStr}, [mov_reg_reg_16] = {0, 2, noLdStr}, [add_reg_16] = {0, 6, noLdStr},
+
+    [cmp_reg_32] = {0, 3, noLdStr}, [cmp_imm_32] = {0, 1, noLdStr}, [ite_32] = {0, 0, noLdStr}, [it_32] = {0, 0, noLdStr}, 
+    [b_imm_32] = {0, 0, noLdStr}, [b_reg_32] = {0, 1, noLdStr}, [bc_reg_32] = {0, 1, noLdStr}, [bc_imm_32] = {0, 0, noLdStr},
+    [b_imm_16] = {0, 0, noLdStr}, [b_reg_16] = {0, 1, noLdStr}, [bc_imm_16] = {0, 0, noLdStr}, [bc_reg_16] = {0, 1, noLdStr}
+};
 
 #define lim32 bc_imm_32
 
@@ -312,21 +342,37 @@ forceinline void emitHex(const uint8_t instructionIdx) {
 forceinline void shiftInstructionFrame(const uint8_t rmIdx){
 	for(uint8_t i1 = rmIdx, i2 = rmIdx + 1; i2 < frameDepth; i2++, i1++) instructionFrame[i1] = instructionFrame[i2];
 }
-#define isLDR(c) (c == ldr_gpr_imm_16 || c == ldr_imm_16 || c == ldrb_imm_16 || c == ldrbw_imm_32 || c == ldrbw_reg_32 || c == ldrh_imm_16 || c == ldrhw_imm_32 || c == ldrhw_reg_32 || c == ldrw_imm_32 || c == ldrw_reg_32)
-#define isSTR(c) (c == str_imm_16 || c == strb_imm_16 || c == strbw_imm_32 || c == strbw_reg_32 || c == strh_imm_16 || c == strhw_imm_32 || c == strhw_reg_32 || c == strw_imm_32 || c == strw_reg_32)
+
+forceinline int8_t getWriteReg(const instruction i){
+	return (opcodeTags[i.code].destReg - 1) ? i.args[opcodeTags[i.code].destReg - 1] : -1;
+}
+forceinline uint8_t writesToRegister(const instruction i, const uint8_t reg){
+	if(opcodeTags[i.code].destReg - 1 && i.args[opcodeTags[i.code].destReg - 1] == reg) return 1; return 0; 
+}
+forceinline uint8_t readsFromRegister(const instruction i, const int8_t reg){
+	if(reg == -1) return 0;
+	for(uint8_t o = 0; o < 3; o++){
+		if((opcodeTags[i.code].readRegs >> o) & 1) return 1;
+	} return 0;
+}
 forceinline uint8_t isPipelineBubble(const instruction i1, const instruction i2){
-	switch(i1.code){
-		case ldr_gpr_imm_16: case ldr_imm_16: case ldrb_imm_16: case ldrbw_imm_32: case ldrbw_reg_32:
-		case ldrh_imm_16: case ldrhw_imm_32: case ldrhw_reg_32: case ldrw_imm_32: case ldrw_reg_32:
-		for(uint8_t i = 0; i < i2.numArgs; i++)if(i2.args[i].type == registerArg && i2.args[i].val == i1.args[0].val) return 1;
-		return isLDR(i2.code);
-	}
+	// check if i1 writes into registers that are used in i2
+	// if so, its a bubble
+	// also, if i1 and i2 are both stores or both loads then its also a stall
+	// adjacent additions/operations dont cause bubbles bc forwarding
+	if(opcodeTags[i1.code].isLoadOrStore != noLdStr && opcodeTags[i1.code].isLoadOrStore == opcodeTags[i2.code].isLoadOrStore){
+		return 1;
+	} if(readsFromRegister(i2, getWriteReg(i1))) return 1;
+	return 0;
 }
 enum orderTypes{noOrder, requiredOrder, redundantOrder};
 forceinline uint8_t orderRequirements(const instruction i1, const instruction i2){
 	// check if i1 writes into registers that are read in i2 OR if i1 reads registers that i2 later writes to.
 	// if so, order is required
+	if(readsFromRegister(i2, getWriteReg(i1)) || readsFromRegister(i1, getWriteReg(i2))) return requiredOrder;
 	// check if i1 and i2 store into same register. if so, order is redundant
+	if(getWriteReg(i1) == getWriteReg(i2)) return redundantOrder;
+	return noOrder;
 	// else, its just no order
 }
 
