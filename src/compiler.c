@@ -168,7 +168,7 @@ const opcodeTag opcodeTags[57] = {
     [ldrw_imm_32]  = {2, 1, isLoad}, [ldrw_reg_32]  = {2, 5, isLoad}, 
     [ldrbw_imm_32] = {2, 1, isLoad}, [ldrbw_reg_32] = {2, 5, isLoad}, 
     [ldrhw_imm_32] = {2, 1, isLoad}, [ldrhw_reg_32] = {2, 5, isLoad},
-    [ldr_imm_16]   = {2, 1, isLoad}, [ldr_gpr_imm_16] = {2, 1, isLoad}, [ldrb_imm_16] = {2, 1, isLoad}, [ldrh_imm_16] = {2, 1, isLoad},
+    [ldr_imm_16]   = {1, 1, isLoad}, [ldr_gpr_imm_16] = {1, 1, isLoad}, [ldrb_imm_16] = {1, 1, isLoad}, [ldrh_imm_16] = {1, 1, isLoad},
 
     [strw_imm_32]  = {0, 3, isStore}, [strw_reg_32]  = {0, 7, isStore},
     [strbw_imm_32] = {0, 3, isStore}, [strbw_reg_32] = {0, 7, isStore},
@@ -343,37 +343,29 @@ forceinline void shiftInstructionFrame(const uint8_t rmIdx){
 	for(uint8_t i1 = rmIdx, i2 = rmIdx + 1; i2 < frameDepth; i2++, i1++) instructionFrame[i1] = instructionFrame[i2];
 }
 
-forceinline int8_t getWriteReg(const instruction i){
-	return (opcodeTags[i.code].destReg - 1) ? i.args[opcodeTags[i.code].destReg - 1] : -1;
+forceinline int8_t getWriteReg(const instruction i){ 
+	return (opcodeTags[i.code].destReg > 0) ? (i.args[opcodeTags[i.code].destReg - 1].val) : -1;
 }
 forceinline uint8_t writesToRegister(const instruction i, const uint8_t reg){
-	if(opcodeTags[i.code].destReg - 1 && i.args[opcodeTags[i.code].destReg - 1] == reg) return 1; return 0; 
+	if(opcodeTags[i.code].destReg - 1 && i.args[opcodeTags[i.code].destReg - 1].val == reg) return 1; return 0; 
 }
 forceinline uint8_t readsFromRegister(const instruction i, const int8_t reg){
 	if(reg == -1) return 0;
 	for(uint8_t o = 0; o < 3; o++){
-		if((opcodeTags[i.code].readRegs >> o) & 1) return 1;
+		if((opcodeTags[i.code].readRegs >> o) & 1 && i.args[o].val == reg) return 1;
 	} return 0;
 }
 forceinline uint8_t isPipelineBubble(const instruction i1, const instruction i2){
-	// check if i1 writes into registers that are used in i2
-	// if so, its a bubble
-	// also, if i1 and i2 are both stores or both loads then its also a stall
-	// adjacent additions/operations dont cause bubbles bc forwarding
-	if(opcodeTags[i1.code].isLoadOrStore != noLdStr && opcodeTags[i1.code].isLoadOrStore == opcodeTags[i2.code].isLoadOrStore){
+	if(i1.code == 0xFF) return 0; if(opcodeTags[i1.code].isLoadOrStore != noLdStr && opcodeTags[i1.code].isLoadOrStore == opcodeTags[i2.code].isLoadOrStore){
 		return 1;
 	} if(readsFromRegister(i2, getWriteReg(i1))) return 1;
 	return 0;
 }
 enum orderTypes{noOrder, requiredOrder, redundantOrder};
 forceinline uint8_t orderRequirements(const instruction i1, const instruction i2){
-	// check if i1 writes into registers that are read in i2 OR if i1 reads registers that i2 later writes to.
-	// if so, order is required
-	if(readsFromRegister(i2, getWriteReg(i1)) || readsFromRegister(i1, getWriteReg(i2))) return requiredOrder;
-	// check if i1 and i2 store into same register. if so, order is redundant
-	if(getWriteReg(i1) == getWriteReg(i2)) return redundantOrder;
-	return noOrder;
-	// else, its just no order
+	const int8_t rw1 = getWriteReg(i1); const int8_t rw2 = getWriteReg(i2);
+	if(readsFromRegister(i2, rw1) || readsFromRegister(i1, rw2)) return requiredOrder;
+	if(rw1 == rw2 && rw1 != -1) return redundantOrder; return noOrder;
 }
 
 void emitOpcode(const uint8_t code) {
@@ -431,16 +423,24 @@ void emitOpcode(const uint8_t code) {
 	case b_imm_16:		 printf("B_IMM_16"); break;
 	default:             printf("UNKNOWN_OP"); break;
 	}if(numInstructions == frameDepth){
-		prevInstruction = instructionFrame[0];
-		emitHex(1);
-		shiftInstructionFrame(0);
+		numInstructions--; uint8_t instIdx = 1; if(isPipelineBubble(prevInstruction, instructionFrame[instIdx-1]))
+		for(uint8_t inst = 1; inst < 8; inst++){
+			if(orderRequirements(instructionFrame[instIdx-1], instructionFrame[inst]) == noOrder) instIdx = inst+1;
+		}
+		emitHex(instIdx); prevInstruction = instructionFrame[instIdx-1]; shiftInstructionFrame(instIdx-1);
 	}
 	instructionFrame[numInstructions++] = makeInstruction(code);
 	printf("\n");
 	fflush(stdout);
 }
 forceinline void flushInstructionBuffer(){
-	for(uint8_t i = 1; i <= numInstructions; i++) emitHex(i);
+	while(numInstructions > 0){
+		uint8_t instIdx = 1; if(isPipelineBubble(prevInstruction, instructionFrame[instIdx-1]))
+		for(uint8_t inst = 1; inst < numInstructions; inst++){
+			if(orderRequirements(instructionFrame[instIdx-1], instructionFrame[inst]) == noOrder) instIdx = inst+1;
+		} numInstructions--;
+		emitHex(instIdx); prevInstruction = instructionFrame[instIdx-1]; shiftInstructionFrame(instIdx-1);
+	}
 }
 
 forceinline void emitModifier(const uint8_t mod){
