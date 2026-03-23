@@ -2,9 +2,10 @@
 
 * [being worked on]
 
-* peephole opcode reordering(remove some pipeline bubbles)
 * macros
-
+* ldm/stm support to further optimize expensive loads & stores
+* add argument & return to scripts
+* add prologue/epilogue(push/pop all registers) before & after running scripts, allows for interop w/RTOS
 
 
 
@@ -24,3 +25,4 @@
 	~ associated issue: make sure the backpatches actually patch the PROPER bits, not just the proper memory location.
 ~ improve register snapshot system to ensure dirty bit tracking properly
 ~ absolute addressing for volatile operations
+~ peephole opcode reordering(remove some pipeline bubbles)

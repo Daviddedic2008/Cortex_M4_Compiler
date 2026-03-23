@@ -1,6 +1,5 @@
 #include <stdio.h>
 #include <stdint.h>
-#include <string.h>
 #include "compiler.h"
 
 #if defined(__GNUC__) || defined(__clang__)
@@ -86,7 +85,7 @@ forceinline void setSource(const char* c){src = c;}
 
 void nextToken(){
 	while(isNullChar(*src))src++;
-	if(*src == '#'){do{src++;}while(*src != '#'); src++;}
+	if(*src == '#'){do{src++;}while(*src != '#'); src++; while(isNullChar(*src))src++;}
 	curToken = (token){(void*)0, 0, nullToken, 0}; if(*src == '\0')return;
 	curToken.str = src; curToken.len = 0;
 	if(isSingle(*src)){src++; curToken.len++;}
@@ -1319,7 +1318,7 @@ operator operatorStack[maxOperatorDepth]; operand operandStack[maxOperands];
 
 forceinline void backpatch(const uint32_t addressToPatch, const uint32_t memoryOffset, uint8_t* progOrigin){
 	const uint32_t trueJump = progAddr - addressToPatch - 4;
-	progOrigin[addressToPatch] = trueJump;
+	progOrigin[addressToPatch] |= trueJump; // fine for now
 }
 
 #define branchKeywordLimit 16

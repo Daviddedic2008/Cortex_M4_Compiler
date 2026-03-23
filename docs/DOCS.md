@@ -41,6 +41,21 @@ word 4 buffer = 0;	// reserves 16 bytes (4 words) on the stack and zeros the var
 
 ```
 
+### Arguments
+
+Variables can also be declared as arguments. This means that they assume their value is already pushed on the stack before the program starts.
+When you define an argument it will pop that number of words from the stack and then increment the other variable's offsets.
+Arguments must be the first variables defined in a script! They also take no value, and only require an empty definition.
+
+```rust
+// argument word [count] name;
+// notice that there is no equal operator
+// in this script we assume the argument has already been pushed to the stack
+argument word arg1; argument word arg2;
+word result = arg1 + arg2;
+
+```
+
 ---
 
 ## Constant Folding
@@ -69,6 +84,19 @@ memoryLocation = 100; // you want this variable to write back to stack always, f
 flush memoryLocation = 5; // forces stack writeback in this case
 memoryLocation = 5; // if memoryLocation is already in registers, load there
 
+
+```
+
+### RETURN
+
+This doesn't really fit in any docs section so I just put it here. the RETURN operator pushes said variable onto the stack, and follows this up by pushing its length to stack
+RETURN is used to have scripts that are actually useful and can meaningfully interop with RTOS'said
+
+```rust
+// return [val];
+// [val] can be a variable, expression, or constant
+argument word 1 arg1; // pops from stack
+return arg1 + 5; // add 5 to argument and return (push back to stack, but incremented by 5)
 
 ```
 
