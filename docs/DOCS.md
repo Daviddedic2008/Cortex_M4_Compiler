@@ -12,10 +12,14 @@ The language is perfect for making small scripts that interface with GPIO, as th
 Since the compiler is small enough to theoretically run on the Cortex M4 itself with room to spare, this language could be used in a pseudo-OS on that MCU.
 It could easily self-host on much more constrained systems, but I do not know of any lower spec ARM thumb-2 systems.
 
+The compiler mostly engages in simple optimizations(smarter spilling, register reuse, etc.) but a few interesting optimizations, namely 
+instruction reordering to reduce dependencies, load grouping, and low register(0-7) favoritism, to name a few.
+
 \* NOTE 1: Register allocator spills based on loop depth, prioritizing register used deep in loops as well as recently used registers.
-Now, here's the actual documentation:
 
 \* NOTE 2: Although the compiler is mostly single-pass, some stuff(like hex emission) relies on stacks that are dynamically filled/flushed to allow for more comprehensive peephole optimizations.
+
+Now, here's the actual documentation:
 
 ---
 
