@@ -2,12 +2,11 @@
 
 * [being worked on]
 
-* IMPORTANT: add blocks to instruction frames to force order in multi instruction ops while allowing for somewhat restrictive reordering
 * macros
-* ldm/stm support to further optimize expensive loads & stores
+* ldm/stm support & grouping loads to further optimize expensive loads & stores
 * add argument & return to scripts
 * add prologue/epilogue(push/pop all registers) before & after running scripts, allows for interop w/RTOS
-
+* make order also depend on flag modifications
 
 
 
@@ -27,3 +26,4 @@
 ~ improve register snapshot system to ensure dirty bit tracking properly
 ~ absolute addressing for volatile operations
 ~ peephole opcode reordering(remove some pipeline bubbles)
+~ add blocks to instruction frames to force order in multi instruction ops while allowing for somewhat restrictive reordering

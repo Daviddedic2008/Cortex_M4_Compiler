@@ -160,30 +160,45 @@ typedef struct{
 	uint8_t destReg : 2;
 	uint8_t readRegs : 3;
 	uint8_t isLoadOrStore : 2;
+	uint8_t flagUsage;
 }opcodeTag;
+enum flagMods{fNone, fSet, fRead};
 const opcodeTag opcodeTags[57] = {
-    [movw_reg_reg_32] = {1, 2}, [movw_lit_32] = {1, 0}, [movt_lit_32] = {1, 0},
+    [movw_reg_reg_32] = {1, 2, noLdStr, fNone}, 
+    [movw_lit_32]     = {1, 0, noLdStr, fNone}, 
+    [movt_lit_32]     = {1, 0, noLdStr, fNone},
 
-    [ldrw_imm_32]  = {2, 1, isLoad}, [ldrw_reg_32]  = {2, 5, isLoad}, 
-    [ldrbw_imm_32] = {2, 1, isLoad}, [ldrbw_reg_32] = {2, 5, isLoad}, 
-    [ldrhw_imm_32] = {2, 1, isLoad}, [ldrhw_reg_32] = {2, 5, isLoad},
-    [ldr_imm_16]   = {1, 1, isLoad}, [ldr_gpr_imm_16] = {1, 1, isLoad}, [ldrb_imm_16] = {1, 1, isLoad}, [ldrh_imm_16] = {1, 1, isLoad},
+    [ldrw_imm_32]  = {2, 1, isLoad, fNone}, [ldrw_reg_32]  = {2, 5, isLoad, fNone}, 
+    [ldrbw_imm_32] = {2, 1, isLoad, fNone}, [ldrbw_reg_32] = {2, 5, isLoad, fNone}, 
+    [ldrhw_imm_32] = {2, 1, isLoad, fNone}, [ldrhw_reg_32] = {2, 5, isLoad, fNone},
+    [ldr_imm_16]   = {1, 1, isLoad, fNone}, [ldr_gpr_imm_16] = {1, 1, isLoad, fNone}, 
+    [ldrb_imm_16]  = {1, 1, isLoad, fNone}, [ldrh_imm_16] = {1, 1, isLoad, fNone},
 
-    [strw_imm_32]  = {0, 3, isStore}, [strw_reg_32]  = {0, 7, isStore},
-    [strbw_imm_32] = {0, 3, isStore}, [strbw_reg_32] = {0, 7, isStore},
-    [strhw_imm_32] = {0, 3, isStore}, [strhw_reg_32] = {0, 7, isStore},
-    [str_imm_16]   = {0, 3, isStore}, [strb_imm_16]  = {0, 3, isStore}, [strh_imm_16] = {0, 3, isStore},
+    [strw_imm_32]  = {0, 3, isStore, fNone}, [strw_reg_32]  = {0, 7, isStore, fNone},
+    [strbw_imm_32] = {0, 3, isStore, fNone}, [strbw_reg_32] = {0, 7, isStore, fNone},
+    [strhw_imm_32] = {0, 3, isStore, fNone}, [strhw_reg_32] = {0, 7, isStore, fNone},
+    [str_imm_16]   = {0, 3, isStore, fNone}, [strb_imm_16]  = {0, 3, isStore, fNone}, 
+    [strh_imm_16]  = {0, 3, isStore, fNone},
 
-    [subw_imm_32] = {0, 2, noLdStr}, [addw_imm_32] = {0, 2, noLdStr}, [subw_reg_32] = {0, 6, noLdStr}, [addw_reg_32] = {0, 6, noLdStr},
-    [subs_imm_32] = {0, 2, noLdStr}, [subs_reg_32] = {0, 6, noLdStr}, [mulw_reg_32] = {0, 6, noLdStr}, [divw_reg_32] = {0, 6, noLdStr},
-    [lsr_imm_32]  = {0, 2, noLdStr}, [lsl_imm_32]  = {0, 2, noLdStr}, [lsr_reg_32]  = {0, 6, noLdStr}, [lsl_reg_32]  = {0, 6, noLdStr},
-    [eors_reg_32] = {0, 6, noLdStr}, [eors_imm_32] = {0, 2, noLdStr}, [orrs_reg_32] = {0, 6, noLdStr}, [andw_imm_32] = {0, 2, noLdStr}, 
-    [andw_reg_32] = {0, 6, noLdStr}, [orrs_imm_32] = {0, 2, noLdStr}, [mvn_imm_32]  = {0, 0, noLdStr}, [mvn_reg_32]  = {0, 2, noLdStr},
-    [mov_lit_16]  = {0, 0, noLdStr}, [mov_reg_reg_16] = {0, 2, noLdStr}, [add_reg_16] = {0, 6, noLdStr},
+    [subw_imm_32] = {0, 2, noLdStr, fNone}, [addw_imm_32] = {0, 2, noLdStr, fNone}, 
+    [subw_reg_32] = {0, 6, noLdStr, fNone}, [addw_reg_32] = {0, 6, noLdStr, fNone},
+    [subs_imm_32] = {0, 2, noLdStr, fSet},  [subs_reg_32] = {0, 6, noLdStr, fSet}, 
+    [mulw_reg_32] = {0, 6, noLdStr, fNone}, [divw_reg_32] = {0, 6, noLdStr, fNone},
+    [lsr_imm_32]  = {0, 2, noLdStr, fNone}, [lsl_imm_32]  = {0, 2, noLdStr, fNone}, 
+    [lsr_reg_32]  = {0, 6, noLdStr, fNone}, [lsl_reg_32]  = {0, 6, noLdStr, fNone},
+    [eors_reg_32] = {0, 6, noLdStr, fSet},  [eors_imm_32] = {0, 2, noLdStr, fSet}, 
+    [orrs_reg_32] = {0, 6, noLdStr, fSet},  [andw_imm_32] = {0, 2, noLdStr, fNone}, 
+    [andw_reg_32] = {0, 6, noLdStr, fNone}, [orrs_imm_32] = {0, 2, noLdStr, fSet}, 
+    [mvn_imm_32]  = {0, 0, noLdStr, fNone}, [mvn_reg_32]  = {0, 2, noLdStr, fNone},
+    [mov_lit_16]  = {0, 0, noLdStr, fNone}, [mov_reg_reg_16] = {0, 2, noLdStr, fNone}, 
+    [add_reg_16]  = {0, 6, noLdStr, fNone},
 
-    [cmp_reg_32] = {0, 3, noLdStr}, [cmp_imm_32] = {0, 1, noLdStr}, [ite_32] = {0, 0, noLdStr}, [it_32] = {0, 0, noLdStr}, 
-    [b_imm_32] = {0, 0, noLdStr}, [b_reg_32] = {0, 1, noLdStr}, [bc_reg_32] = {0, 1, noLdStr}, [bc_imm_32] = {0, 0, noLdStr},
-    [b_imm_16] = {0, 0, noLdStr}, [b_reg_16] = {0, 1, noLdStr}, [bc_imm_16] = {0, 0, noLdStr}, [bc_reg_16] = {0, 1, noLdStr}
+    [cmp_reg_32] = {0, 3, noLdStr, fSet}, [cmp_imm_32] = {0, 1, noLdStr, fSet}, 
+    [ite_32] = {0, 0, noLdStr, fRead},    [it_32] = {0, 0, noLdStr, fRead}, 
+    [b_imm_32] = {0, 0, noLdStr, fNone},  [b_reg_32] = {0, 1, noLdStr, fNone}, 
+    [bc_reg_32] = {0, 1, noLdStr, fRead}, [bc_imm_32] = {0, 0, noLdStr, fRead},
+    [b_imm_16] = {0, 0, noLdStr, fNone},  [b_reg_16] = {0, 1, noLdStr, fNone}, 
+    [bc_imm_16] = {0, 0, noLdStr, fRead}, [bc_reg_16] = {0, 1, noLdStr, fRead}
 };
 
 #define lim32 bc_imm_32
@@ -377,7 +392,10 @@ enum orderTypes{noOrder, requiredOrder, redundantOrder};
 forceinline uint8_t orderRequirements(const instruction i1, const instruction i2){
 	const int8_t rw1 = getWriteReg(i1); const int8_t rw2 = getWriteReg(i2);
 	if(readsFromRegister(i2, rw1) || readsFromRegister(i1, rw2)) return requiredOrder;
-	if(rw1 == rw2 && rw1 != -1) return redundantOrder; return noOrder;
+	if(opcodeTags[i1.code].flagUsage == fRead && opcodeTags[i2.code].flagUsage == fSet) return requiredOrder;
+	if(opcodeTags[i1.code].flagUsage == fSet && (opcodeTags[i2.code].flagUsage == fRead || opcodeTags[i2.code].flagUsage == fSet)) return requiredOrder;
+	if(rw1 == rw2 && rw1 != -1) return redundantOrder; 
+	return noOrder;
 }
 
 forceinline void popInstruction(){
