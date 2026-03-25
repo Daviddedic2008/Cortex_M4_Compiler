@@ -89,7 +89,7 @@ memoryLocation = 5; // if memoryLocation is already in registers, load there
 
 ### RETURN
 
-This doesn't really fit in any docs section so I just put it here. the RETURN operator pushes said variable onto the stack, and follows this up by pushing its length to stack
+This doesn't really fit in any docs section so I just put it here. the RETURN operator pushes said variable onto the stack, and follows this up by pushing its length to stack.
 RETURN is used to have scripts that are actually useful and can meaningfully interop with RTOS'said
 
 ```rust

@@ -200,12 +200,25 @@ typedef struct{
 	uint8_t code; uint8_t numArgs;
 	arg args[3];
 }instruction;
+typedef struct{uint8_t startIdx, endIdx}block; block blocks[8]; uint8_t takenBlocks = 0;
+int8_t activeBlock = -1;
 
 #define makeInstruction(code) (instruction){.code = code, .numArgs = 0};
 #define frameDepth 8
 uint32_t progAddr; uint8_t* outputBuf; uint8_t modifierFrame;
 instruction instructionFrame[frameDepth]; uint8_t numInstructions = 0;
 instruction prevInstruction = (instruction){.code = 0xFF, .numArgs = 0xFF};
+
+forceinline void startBlock(){
+	for(uint8_t mask = 1, bIdx = 0; mask < 0b10000000; mask = mask << 1, bIdx++){
+		if(!(takenBlocks & mask)){
+			takenBlocks |= mask; activeBlock = bIdx; blocks[bIdx].startIdx = numInstructions; blocks[bIdx].endIdx = numInstructions;
+		}
+	}
+}
+forceinline void endBlock(){
+	activeBlock = -1;
+}
 
 forceinline uint32_t setBits(uint32_t base, const uint32_t value, const uint8_t startBit){
 	const uint32_t mask = value << startBit; return base | mask;
@@ -367,6 +380,23 @@ forceinline uint8_t orderRequirements(const instruction i1, const instruction i2
 	if(rw1 == rw2 && rw1 != -1) return redundantOrder; return noOrder;
 }
 
+forceinline void popInstruction(){
+	uint8_t instIdx = 1; if(isPipelineBubble(prevInstruction, instructionFrame[0]))
+	for(uint8_t inst = 1; inst < numInstructions; inst++){
+		for(uint8_t i2 = 0; i2 < inst; i2++) if(orderRequirements(instructionFrame[i2], instructionFrame[inst]) != noOrder) goto skpLoopIter;
+		for(uint8_t bIdx = 0; bIdx < 8; bIdx++){
+			if(((1<< bIdx) & takenBlocks)){
+				if(inst > blocks[bIdx].startIdx && inst <= blocks[bIdx].endIdx) goto skpLoopIter;
+				else if(inst == blocks[bIdx].startIdx){blocks[bIdx].startIdx++; if(blocks[bIdx].startIdx == blocks[bIdx].endIdx) takenBlocks &= ~(1 << bIdx);}
+				else if(inst < blocks[bIdx].startIdx){blocks[bIdx].startIdx--; blocks[bIdx].endIdx--;}
+			}
+		}instIdx = inst+1;
+		skpLoopIter:;
+	} 
+	numInstructions--; 
+	emitHex(instIdx); prevInstruction = instructionFrame[instIdx-1]; shiftInstructionFrame(instIdx-1);
+}
+
 void emitOpcode(const uint8_t code) {
 	switch (code) {
 	case movw_reg_reg_32: printf("MOVW_REG_REG_32"); break;
@@ -421,12 +451,11 @@ void emitOpcode(const uint8_t code) {
 	case mov_reg_reg_16: printf("MOV_REG_REG_16"); break;
 	case b_imm_16:		 printf("B_IMM_16"); break;
 	default:             printf("UNKNOWN_OP"); break;
-	}if(numInstructions == frameDepth){
-		numInstructions--; uint8_t instIdx = 1; if(isPipelineBubble(prevInstruction, instructionFrame[instIdx-1]))
-		for(uint8_t inst = 1; inst < 8; inst++){
-			if(orderRequirements(instructionFrame[instIdx-1], instructionFrame[inst]) == noOrder) instIdx = inst+1;
-		}
-		emitHex(instIdx); prevInstruction = instructionFrame[instIdx-1]; shiftInstructionFrame(instIdx-1);
+	}if(activeBlock != -1){
+		blocks[activeBlock].endIdx += 1;
+	}
+	if(numInstructions == frameDepth){
+		popInstruction();
 	}
 	instructionFrame[numInstructions++] = makeInstruction(code);
 	printf("\n");
@@ -434,11 +463,7 @@ void emitOpcode(const uint8_t code) {
 }
 forceinline void flushInstructionBuffer(){
 	while(numInstructions > 0){
-		uint8_t instIdx = 1; if(isPipelineBubble(prevInstruction, instructionFrame[instIdx-1]))
-		for(uint8_t inst = 1; inst < numInstructions; inst++){
-			if(orderRequirements(instructionFrame[instIdx-1], instructionFrame[inst]) == noOrder) instIdx = inst+1;
-		} numInstructions--;
-		emitHex(instIdx); prevInstruction = instructionFrame[instIdx-1]; shiftInstructionFrame(instIdx-1);
+		popInstruction();
 	}
 }
 
@@ -1077,6 +1102,7 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 		}
 		case opSub: case opAdd: case opBitwiseAnd: case opBitwiseOr: case opRightShift: case opLeftShift:{
 		o2 = *operands, o1 = *(operands - 1);
+		startBlock();
 		const uint32_t num32BitAdds = ((o1.size > o2.size ? o1.size : o2.size) + 3) >> 2;
 		for(uint32_t wIdx = 0; wIdx < num32BitAdds; wIdx++){
 			int64_t constantInAdd = -1; int8_t r1 = -1; uint8_t r1d, r2d;
@@ -1116,10 +1142,12 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 			emitArgument(resultReg, 4); emitArgument(r1, 4); emitArgument(r2 == -1 ? constantInAdd : r2, r2 == -1 ? immSize(op.subtype) : 4);
 		}
 		curStackOffset += num32BitAdds * 4; curCompilerTempSz += num32BitAdds * 4;
+		endBlock();
 		return (operand){curStackOffset - num32BitAdds * 4, num32BitAdds * 4, stackVar, 0, 0, registerPermanence};
 		}
 		case opIncrement: case opDecrement:{
 		o2 = *operands, o1 = *(operands - 1);
+		startBlock();
 		const uint32_t num32BitAdds = ((o1.size > o2.size ? o1.size : o2.size) + 3) >> 2;
 		for(uint32_t wIdx = 0; wIdx < num32BitAdds; wIdx++){
 			int64_t constantInAdd = -1; int8_t r1 = -1; uint8_t r1d, r2d;
@@ -1146,11 +1174,13 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 			emitArgument(r1, 4); emitArgument(r1, 4); emitArgument(r2 == -1 ? constantInAdd : r2, r2 == -1 ? immSize(op.subtype) : 4);
 		}
 		curStackOffset += num32BitAdds * 4; curCompilerTempSz += num32BitAdds * 4;
+		endBlock();
 		return (operand){curStackOffset - num32BitAdds * 4, num32BitAdds * 4, stackVar, 0, 0, registerPermanence};
 			
 		}
 		case opCmpEqual: case opCmpGreater: case opCmpLess: case opCmpGEqual: case opCmpLEqual: case opCmpNEqual:{
 		o2 = *operands, o1 = *(operands - 1);
+		startBlock();
 		flushFlags();
 		virtualFlags.flagType = op.subtype; virtualFlags.dirty = dirty;
 		if(o1.operandType == constant && o2.operandType == constant) return (operand) {4, 4, constant, 0, 0, registerPermanence};
@@ -1190,6 +1220,7 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 		}
 		virtualFlags.flagType = getFlag(op.subtype);
 		virtualFlags.stackOffset = curStackOffset; curStackOffset += 4; curCompilerTempSz += 4;
+		endBlock();
 		return (operand){curStackOffset - 4, 4, flagVar, getFlag(op.subtype), 0, registerPermanence};
 		}
 		case opLogicalAnd: case opLogicalOr:{

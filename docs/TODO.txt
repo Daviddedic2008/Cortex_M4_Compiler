@@ -2,6 +2,7 @@
 
 * [being worked on]
 
+* IMPORTANT: add blocks to instruction frames to force order in multi instruction ops while allowing for somewhat restrictive reordering
 * macros
 * ldm/stm support to further optimize expensive loads & stores
 * add argument & return to scripts
