@@ -9,10 +9,10 @@
 #endif
 
 #if defined(__x86_64__) || defined(_M_X64) || defined(__aarch64__) || defined(__LP64__)
-    #define unionType uint64_t
+    #define unionType int64_t
     #define BITS 64
 #else
-#define unionType uint32_t
+#define unionType int32_t
     #define BITS 32
 #endif
 
@@ -149,7 +149,7 @@ typedef enum opcode {
 	subw_imm_32, addw_imm_32, subw_reg_32, addw_reg_32,
 	subs_imm_32, subs_reg_32, adds_imm_32, adds_reg_32, lsr_imm_32, lsl_imm_32, lsr_reg_32, lsl_reg_32,
 	mulw_reg_32, divw_reg_32, ite_32, it_32,
-	cmp_reg_32, cmp_imm_32, 
+	cmp_reg_32, cmp_imm_32, pop_32, push_32,
 	eors_reg_32, eors_imm_32, orrs_reg_32, andw_imm_32, andw_reg_32, orrs_imm_32,
 	mvn_imm_32, mvn_reg_32, b_imm_32, b_reg_32, bc_reg_32, bc_imm_32,
 	ldrb_imm_16, strb_imm_16, ldrh_imm_16, strh_imm_16,
@@ -163,7 +163,7 @@ typedef struct{
 	uint8_t flagUsage;
 }opcodeTag;
 enum flagMods{fNone, fSet, fRead};
-const opcodeTag opcodeTags[58] = {
+const opcodeTag opcodeTags[60] = {
     [movw_reg_reg_32] = {1, 2, noLdStr, fNone}, 
     [movw_lit_32]     = {1, 0, noLdStr, fNone}, 
     [movt_lit_32]     = {1, 0, noLdStr, fNone},
@@ -173,6 +173,8 @@ const opcodeTag opcodeTags[58] = {
     [ldrhw_imm_32] = {2, 1, isLoad, fNone}, [ldrhw_reg_32] = {2, 5, isLoad, fNone},
     [ldr_imm_16]   = {1, 1, isLoad, fNone}, [ldr_gpr_imm_16] = {1, 1, isLoad, fNone}, 
     [ldrb_imm_16]  = {1, 1, isLoad, fNone}, [ldrh_imm_16] = {1, 1, isLoad, fNone},
+	
+	[pop_32] = {1, 0, isLoad, fNone}, [push_32] = {0, 1, noLdStr, fNone},
 
     [strw_imm_32]  = {0, 3, isStore, fNone}, [strw_reg_32]  = {0, 7, isStore, fNone},
     [strbw_imm_32] = {0, 3, isStore, fNone}, [strbw_reg_32] = {0, 7, isStore, fNone},
@@ -454,6 +456,8 @@ void emitOpcode(const uint8_t code) {
 	case eors_reg_32:	 printf("EORS_REG_32"); break;
 	case orrs_reg_32:	 printf("ORRS_REG_32"); break;
 	case orrs_imm_32:	 printf("ORRS_IMM_32"); break;
+	case pop_32: 		 printf("POP_32"); break;
+	case push_32: 		 printf("PUSH_32"); break;
 	case subs_reg_32:    printf("SUBS_REG_32"); break;
 	case subs_imm_32:    printf("SUBS_IMM_32"); break;
 	case andw_imm_32: 	 printf("ANDW_IMM_32"); break;
@@ -746,7 +750,7 @@ uint8_t moveOffsetToRegsFromRegister(const uint8_t loadRegister, const uint32_t 
 enum operandType { constant, stackVar, flagVar, nullVar };
 
 typedef struct{
-	uint32_t stackOffset, size;
+	int32_t stackOffset, size;
 	const char* name; 
 	uint8_t strLen; uint8_t scope;
 }variableMetadata;
@@ -765,7 +769,7 @@ typedef struct{uint8_t subtype, precedence;}operator;
 
 #define maxUserVariables 256
 variableMetadata variableBuffer[maxUserVariables]; uint8_t variableIdx = 0;
-uint32_t curStackOffset = 0; uint32_t curCompilerTempSz = 0;
+uint32_t curStackOffset = 0; uint32_t curCompilerTempSz = 0; uint32_t argSize = 0;
 uint8_t curScope = 0;
 
 variableMetadata addVariable(const char* name, const uint8_t strLen, const uint32_t size){
@@ -1198,7 +1202,6 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 		curStackOffset += num32BitAdds * 4; curCompilerTempSz += num32BitAdds * 4;
 		endBlock();
 		return (operand){curStackOffset - num32BitAdds * 4, num32BitAdds * 4, stackVar, 0, 0, registerPermanence};
-			
 		}
 		case opCmpEqual: case opCmpGreater: case opCmpLess: case opCmpGEqual: case opCmpLEqual: case opCmpNEqual:{
 		o2 = *operands, o1 = *(operands - 1);
@@ -1441,6 +1444,7 @@ typedef struct{
 	uint8_t foundFlush : 1;
 	uint8_t foundVolatile : 1;
 	uint8_t foundNegation : 1;
+	uint8_t foundArgument : 1;
 }persistentToken;
 #pragma pack(pop, 1)
 
@@ -1499,7 +1503,10 @@ uint8_t assembleSource(const char* src, uint8_t* progOrigin){
 		case identifierToken:
 		if(persistentTokens.foundAllocation){
 			if(!(previousToken.type == sizeToken)) operandIdx--; persistentTokens.foundAllocation = 0;
-			const variableMetadata v = addVariable(curToken.str, curToken.len, allocationSz);
+			variableMetadata v = addVariable(curToken.str, curToken.len, allocationSz);
+			if(persistentTokens.foundArgument){
+				persistentTokens.foundArgument = 0;
+			}
 			operandStack[operandIdx++] = (operand){v.stackOffset, allocationSz, stackVar, 0, persistentTokens.foundFlush, registerPermanence};
 		} else{
 			const variableMetadata v = retrieveLocalVariable(curToken.str, curToken.len); if(v.name == (void*)0) return undefinedVariable;
@@ -1513,7 +1520,7 @@ uint8_t assembleSource(const char* src, uint8_t* progOrigin){
 		if(persistentTokens.foundVolatile && curToken.subtype == opDereference) curToken.subtype = opDereferenceVolatile;
 		while(1){
 			uint32_t prevPrecedence = operatorIdx > 0 ? operatorStack[operatorIdx-1].precedence : 0;
-			if(curPrecedence > prevPrecedence || operatorIdx == 1) break;
+			if(curPrecedence > prevPrecedence || operatorIdx == 0) break;
 			const operand tmp = assembleOp(operatorStack[--operatorIdx], operandStack + operandIdx - 1, registerPermanence);
 			const uint8_t oIdx = operatorStack[operatorIdx].subtype; operandIdx -= numOperands(oIdx);
 			operandStack[operandIdx++] = tmp;
@@ -1528,6 +1535,8 @@ uint8_t assembleSource(const char* src, uint8_t* progOrigin){
 		case keywordToken:
 		persistentTokens.foundAllocation = 0;
 		switch(curToken.subtype){
+			case argumentKey:
+			persistentTokens.foundArgument = 1;
 			case flushKey:
 			persistentTokens.foundFlush = 1; break;
 			case ifKey: case whileKey:
@@ -1545,10 +1554,10 @@ uint8_t assembleSource(const char* src, uint8_t* progOrigin){
 		persistentTokens.foundAllocation = 0;
 		switch(curToken.subtype){
 			case parenthesesL: case parenthesesR:
-			precedence += (curToken.subtype == parenthesesL) * 16 - (curToken.subtype == parenthesesR) * 16;
+			precedence += (curToken.subtype == parenthesesL) * 32 - (curToken.subtype == parenthesesR) * 32;
 			break;
 			case curlyBL:
-			const uint8_t opErr = flushOperatorStacks(registerPermanence);
+			const uint8_t opErr = flushOperatorStacks(registerPermanence); clearCompilerTemporaries();
 			if(opErr != noError) return opErr;
 			operatorIdx = 0; operand condition; uint8_t invalidBackpatch = 0;
 			switch(branchType[branchDepth]){

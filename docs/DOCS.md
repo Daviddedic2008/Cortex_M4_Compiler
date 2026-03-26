@@ -47,6 +47,8 @@ Variables can also be declared as arguments. This means that they assume their v
 When you define an argument it will pop that number of words from the stack and then increment the other variable's offsets.
 Arguments must be the first variables defined in a script! They also take no value, and only require an empty definition.
 
+Sending arguments for a script requires pushing said values onto the stack and resetting the stack pointer to point to the start of said arguments.
+
 ```rust
 // argument word [count] name;
 // notice that there is no equal operator
