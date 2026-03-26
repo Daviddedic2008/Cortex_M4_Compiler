@@ -147,7 +147,7 @@ typedef enum opcode {
 	ldrbw_imm_32, strbw_imm_32, ldrbw_reg_32, strbw_reg_32,
 	ldrhw_imm_32, strhw_imm_32, ldrhw_reg_32, strhw_reg_32,
 	subw_imm_32, addw_imm_32, subw_reg_32, addw_reg_32,
-	subs_imm_32, subs_reg_32, lsr_imm_32, lsl_imm_32, lsr_reg_32, lsl_reg_32,
+	subs_imm_32, subs_reg_32, adds_imm_32, adds_reg_32, lsr_imm_32, lsl_imm_32, lsr_reg_32, lsl_reg_32,
 	mulw_reg_32, divw_reg_32, ite_32, it_32,
 	cmp_reg_32, cmp_imm_32, 
 	eors_reg_32, eors_imm_32, orrs_reg_32, andw_imm_32, andw_reg_32, orrs_imm_32,
@@ -163,7 +163,7 @@ typedef struct{
 	uint8_t flagUsage;
 }opcodeTag;
 enum flagMods{fNone, fSet, fRead};
-const opcodeTag opcodeTags[57] = {
+const opcodeTag opcodeTags[58] = {
     [movw_reg_reg_32] = {1, 2, noLdStr, fNone}, 
     [movw_lit_32]     = {1, 0, noLdStr, fNone}, 
     [movt_lit_32]     = {1, 0, noLdStr, fNone},
@@ -191,7 +191,7 @@ const opcodeTag opcodeTags[57] = {
     [andw_reg_32] = {0, 6, noLdStr, fNone}, [orrs_imm_32] = {0, 2, noLdStr, fSet}, 
     [mvn_imm_32]  = {0, 0, noLdStr, fNone}, [mvn_reg_32]  = {0, 2, noLdStr, fNone},
     [mov_lit_16]  = {0, 0, noLdStr, fNone}, [mov_reg_reg_16] = {0, 2, noLdStr, fNone}, 
-    [add_reg_16]  = {0, 6, noLdStr, fNone},
+    [adds_reg_32]  = {0, 6, noLdStr, fSet}, [adds_imm_32]  = {0, 2, noLdStr, fSet},
 
     [cmp_reg_32] = {0, 3, noLdStr, fSet}, [cmp_imm_32] = {0, 1, noLdStr, fSet}, 
     [ite_32] = {0, 0, noLdStr, fRead},    [it_32] = {0, 0, noLdStr, fRead}, 
@@ -280,22 +280,24 @@ forceinline void emitHex(const uint8_t instructionIdx) {
 	emit = setBits(emit, args[1].val, 12);
 	emit = setBits(emit, args[2].val, 0); 
 	break;
-	case addw_imm_32: case subw_imm_32: case subs_imm_32:
-	emit = setBits(emit, 0b11110, 27);
-	emit = setBits(emit, (args[2].val >> 11) & 1, 26);
-	emit = setBits(emit, (code == addw_imm_32 ? 0b01000 : 0b01010) | (code == subs_imm_32), 20);
-	emit = setBits(emit, args[0].val, 16);
-	emit = setBits(emit, (args[2].val >> 8) & 0b111, 12);
-	emit = setBits(emit, args[1].val, 8);
-	emit = setBits(emit, args[2].val & 0xFF, 0); 
-	break;
-	case addw_reg_32: case subw_reg_32: case subs_reg_32:
-	emit = setBits(emit, 0b1110101, 25);
-	emit = setBits(emit, (code == addw_reg_32 ? (modifierFrame ? 0b1010 : 0b1000) : (modifierFrame ? 0b1011 : 0b1101)) | (code == subs_reg_32), 20);
-	emit = setBits(emit, args[0].val, 16);
-	emit = setBits(emit, args[1].val, 8);
-	emit = setBits(emit, args[2].val, 0); 
-	break;
+	case addw_imm_32: case subw_imm_32: case subs_imm_32: case adds_imm_32:
+    emit = setBits(emit, 0b11110, 27);
+    emit = setBits(emit, (args[2].val >> 11) & 1, 26);
+    uint8_t immOp = (code == addw_imm_32 || code == adds_imm_32) ? (modifierFrame ? 0b01010 : 0b01000) : (modifierFrame ? 0b01011 : 0b01010);
+    emit = setBits(emit, immOp | (code == subs_imm_32 || code == adds_imm_32), 20);
+    emit = setBits(emit, args[0].val, 16);
+    emit = setBits(emit, (args[2].val >> 8) & 0b111, 12);
+    emit = setBits(emit, args[1].val, 8);
+    emit = setBits(emit, args[2].val & 0xFF, 0); 
+    break;
+	case addw_reg_32: case subw_reg_32: case subs_reg_32: case adds_reg_32:
+    emit = setBits(emit, 0b1110101, 25);
+    uint8_t regOp = (code == addw_reg_32 || code == adds_reg_32) ? (modifierFrame ? 0b1010 : 0b1000) : (modifierFrame ? 0b1110 : 0b1101);
+    emit = setBits(emit, regOp | (code == subs_reg_32 || code == adds_reg_32), 20);
+    emit = setBits(emit, args[0].val, 16);
+    emit = setBits(emit, args[1].val, 8);
+    emit = setBits(emit, args[2].val, 0); 
+    break;
 	case lsr_imm_32: 
 	case lsl_imm_32:
 	emit = setBits(emit, 0b1110101001001111, 16);
@@ -444,7 +446,8 @@ void emitOpcode(const uint8_t code) {
 	case addw_imm_32:    printf("ADDW_IMM_32"); break;
 	case subw_reg_32:    printf("SUBW_REG_32"); break;
 	case addw_reg_32:    printf("ADDW_REG_32"); break;
-	case add_reg_16:     printf("ADD_REG_16"); break;
+	case adds_reg_32:     printf("ADDS_REG_32"); break;
+	case adds_imm_32:     printf("ADDS_IMM_32"); break;
 	case mulw_reg_32:    printf("MULW_REG_32"); break;
 	case divw_reg_32:    printf("DIVW_REG_32"); break;
 	case eors_imm_32:	 printf("EORS_IMM_32"); break;
@@ -802,9 +805,9 @@ forceinline uint32_t evalImm(const uint32_t o1, const uint32_t o2, const uint8_t
 	}
 }
 
-forceinline uint8_t returnImmOpcode(const uint8_t subtype){
+forceinline uint8_t returnImmOpcode(const uint8_t subtype, const uint16_t nt){
 	switch(subtype){
-		case opAdd: case opIncrement: return addw_imm_32;
+		case opAdd: case opIncrement: return nt == 1 ? addw_imm_32 : adds_imm_32;
 		case opSub: case opDecrement: return subw_imm_32;
 		case opMul: return mulw_reg_32;
 		case opBitwiseAnd: return andw_imm_32;
@@ -813,9 +816,9 @@ forceinline uint8_t returnImmOpcode(const uint8_t subtype){
 		case opRightShift: return lsr_imm_32;
 		case opLeftShift: return lsl_imm_32;
 	}
-} forceinline uint8_t returnRegOpcode(const uint8_t subtype){
+} forceinline uint8_t returnRegOpcode(const uint8_t subtype, const uint16_t nt){
 	switch(subtype){
-		case opAdd: case opIncrement: return addw_reg_32;
+		case opAdd: case opIncrement: return nt == 1 ? addw_reg_32 : adds_reg_32;
 		case opSub: case opDecrement: return subw_reg_32;
 		case opMul: return mulw_reg_32;
 		case opBitwiseAnd: return andw_reg_32;
@@ -826,10 +829,11 @@ forceinline uint8_t returnImmOpcode(const uint8_t subtype){
 	}
 }
 
-forceinline uint8_t immSize(const uint8_t subtype){
+forceinline uint8_t immSize(const uint8_t subtype, const uint16_t immSize){
 	switch(subtype){
 		case opBitwiseAnd: case opBitwiseXor: case opBitwiseOr: return 8;
-		case opIncrement: case opDecrement: case opAdd: case opSub: case opBitwiseNot: return 16;
+		case opIncrement: case opDecrement: case opBitwiseNot: return 16;
+		case opAdd: case opSub: return (immSize == 1) ? 12 : 8;
 		case opRightShift: case opLeftShift: return 5;
 	}
 }
@@ -1127,7 +1131,7 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 			switch(o1.operandType){
 				case constant:
 				constantInAdd = wIdx ? 0 : o1.val.value;
-				if(o1.val.value >= 2 << immSize(op.subtype) && o2.operandType != constant && !wIdx) r1 = moveConstantToRegs(o1.val.value, curStackOffset - curCompilerTempSz, UINT16_MAX);
+				if(o1.val.value >= 2 << immSize(op.subtype, num32BitAdds) && o2.operandType != constant && !wIdx) r1 = moveConstantToRegs(o1.val.value, curStackOffset - curCompilerTempSz, UINT16_MAX);
 				break;
 				case stackVar:
 				r1 = moveOffsetToRegs(o1.val.stackOffset + wIdx * 4, o1.val.stackOffset + wIdx * 4, o1.registerPreference);
@@ -1138,7 +1142,7 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 			switch(o2.operandType){
 				case constant:
 				if(constantInAdd >= 0) {return (operand) {evalImm(constantInAdd, o2.val.value, op.subtype), 4, constant, 0, 0, registerPermanence};}
-				if(!wIdx){constantInAdd = o2.val.value; if(o2.val.value >= 2 << immSize(op.subtype)) r2 = moveConstantToRegs(o2.val.value, curStackOffset - curCompilerTempSz, UINT16_MAX);}
+				if(!wIdx){constantInAdd = o2.val.value; if(o2.val.value >= 2 << immSize(op.subtype, num32BitAdds)) r2 = moveConstantToRegs(o2.val.value, curStackOffset - curCompilerTempSz, UINT16_MAX);}
 				else constantInAdd = 0;
 				break;
 				case stackVar:
@@ -1155,9 +1159,9 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 			if(r2 != -1 && virtualRegFile[r2].stackOffset >= curStackOffset - curCompilerTempSz && virtualRegFile[r2].stackOffset < compilerSz)
 			virtualRegFile[r2].dirty = empty; else virtualRegFile[r2].dirty = r2d;
 			const uint8_t resultReg = getEmptyRegister(curStackOffset + wIdx * 4, registerPermanence, noCheck); virtualRegFile[resultReg].dirty = dirty;
-			if(r2 == -1) emitOpcode(returnImmOpcode(op.subtype)); else emitOpcode(returnRegOpcode(op.subtype));
+			if(r2 == -1) emitOpcode(returnImmOpcode(op.subtype, num32BitAdds)); else emitOpcode(returnRegOpcode(op.subtype, num32BitAdds));
 			if(op.subtype == opAdd || op.subtype == opSub) emitModifier(wIdx == 0);
-			emitArgument(resultReg, 4); emitArgument(r1, 4); emitArgument(r2 == -1 ? constantInAdd : r2, r2 == -1 ? immSize(op.subtype) : 4);
+			emitArgument(resultReg, 4); emitArgument(r1, 4); emitArgument(r2 == -1 ? constantInAdd : r2, r2 == -1 ? immSize(op.subtype, num32BitAdds) : 4);
 		}
 		curStackOffset += num32BitAdds * 4; curCompilerTempSz += num32BitAdds * 4;
 		endBlock();
@@ -1173,7 +1177,7 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 			r1d = virtualRegFile[r1].dirty; virtualRegFile[r1].dirty = locked; int8_t r2 = -1;
 			switch(o2.operandType){
 				case constant:
-				if(!wIdx){constantInAdd = o2.val.value; if(o2.val.value >= 2 << immSize(op.subtype)) r2 = moveConstantToRegs(o2.val.value, curStackOffset - curCompilerTempSz, UINT16_MAX);}
+				if(!wIdx){constantInAdd = o2.val.value; if(o2.val.value >= 2 << immSize(op.subtype, num32BitAdds)) r2 = moveConstantToRegs(o2.val.value, curStackOffset - curCompilerTempSz, UINT16_MAX);}
 				else constantInAdd = 0;
 				break;
 				case stackVar:
@@ -1187,9 +1191,9 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 			}const uint32_t compilerSz = curStackOffset + (curCompilerTempSz == 0); virtualRegFile[r1].dirty = dirty;
 			if(r2 != -1 && virtualRegFile[r2].stackOffset >= curStackOffset - curCompilerTempSz && virtualRegFile[r2].stackOffset < compilerSz)
 			virtualRegFile[r2].dirty = empty; else virtualRegFile[r2].dirty = r2d;
-			if(r2 == -1) emitOpcode(returnImmOpcode(op.subtype)); else emitOpcode(returnRegOpcode(op.subtype));
+			if(r2 == -1) emitOpcode(returnImmOpcode(op.subtype, num32BitAdds)); else emitOpcode(returnRegOpcode(op.subtype, num32BitAdds));
 			emitModifier(wIdx == 0);
-			emitArgument(r1, 4); emitArgument(r1, 4); emitArgument(r2 == -1 ? constantInAdd : r2, r2 == -1 ? immSize(op.subtype) : 4);
+			emitArgument(r1, 4); emitArgument(r1, 4); emitArgument(r2 == -1 ? constantInAdd : r2, r2 == -1 ? immSize(op.subtype, num32BitAdds) : 4);
 		}
 		curStackOffset += num32BitAdds * 4; curCompilerTempSz += num32BitAdds * 4;
 		endBlock();
