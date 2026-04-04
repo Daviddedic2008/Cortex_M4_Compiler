@@ -221,7 +221,7 @@ typedef struct{uint8_t startIdx, endIdx}block; block blocks[8]; uint8_t takenBlo
 int8_t activeBlock = -1;
 
 #define makeInstruction(code) (instruction){.code = code, .numArgs = 0};
-#define frameDepth 8
+#define frameDepth 16
 uint32_t progAddr; uint8_t* outputBuf; uint8_t modifierFrame;
 instruction instructionFrame[frameDepth]; uint8_t numInstructions = 0;
 instruction prevInstruction = (instruction){.code = 0xFF, .numArgs = 0xFF};
@@ -403,18 +403,21 @@ forceinline uint8_t orderRequirements(const instruction i1, const instruction i2
 }
 
 forceinline void popInstruction(){
-	uint8_t instIdx = 1; if(isPipelineBubble(prevInstruction, instructionFrame[0]))
+	uint8_t instIdx = 1, lc = opcodeTags[prevInstruction.code].isLoadOrStore == isLoad;
+	if(isPipelineBubble(prevInstruction, instructionFrame[0]) || lc)
 	for(uint8_t inst = 1; inst < numInstructions; inst++){
 		for(uint8_t i2 = 0; i2 < inst; i2++) if(orderRequirements(instructionFrame[i2], instructionFrame[inst]) != noOrder) goto skpLoopIter;
-		for(uint8_t bIdx = 0; bIdx < 8; bIdx++){
-			if(((1<< bIdx) & takenBlocks)){
-				if(inst > blocks[bIdx].startIdx && inst <= blocks[bIdx].endIdx) goto skpLoopIter;
-				else if(inst == blocks[bIdx].startIdx){blocks[bIdx].startIdx++; if(blocks[bIdx].startIdx == blocks[bIdx].endIdx) takenBlocks &= ~(1 << bIdx);}
-				else if(inst < blocks[bIdx].startIdx){blocks[bIdx].startIdx--; blocks[bIdx].endIdx--;}
-			}
-		}instIdx = inst+1;
+		instIdx = lc > 1 ? instIdx : inst+1; lc += opcodeTags[instructionFrame[inst].code].isLoadOrStore == isLoad;
 		skpLoopIter:;
-	} 
+	}
+	for(uint8_t bIdx = 0; bIdx < 8; bIdx++){
+		if(((1<< bIdx) & takenBlocks)){
+			if(instIdx <= blocks[bIdx].startIdx || instIdx > blocks[bIdx].endIdx){
+			if(instIdx == blocks[bIdx].startIdx){blocks[bIdx].startIdx++; if(blocks[bIdx].startIdx == blocks[bIdx].endIdx) takenBlocks &= ~(1 << bIdx);}
+			else if(instIdx < blocks[bIdx].startIdx){blocks[bIdx].startIdx--; blocks[bIdx].endIdx--;}
+			}
+		}
+	}
 	numInstructions--; 
 	emitHex(instIdx); prevInstruction = instructionFrame[instIdx-1]; shiftInstructionFrame(instIdx-1);
 }
