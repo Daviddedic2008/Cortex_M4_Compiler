@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include "compiler.h"
+#include "bootloader.h"
 
 int main(int argc, char* argv[]){
 	FILE* fptr = fopen(argv[1], "r");
@@ -13,6 +14,7 @@ int main(int argc, char* argv[]){
 	fclose(fptr);
 	uint8_t bufferArr[2048]; // output binary buffer
 	const uint8_t errCd = assembleSource(buffer, bufferArr);
+	flash_with_bootstrap(bufferArr, 2048);
     free(buffer);
 	return errCd;
 }

@@ -13,6 +13,7 @@ add_compile_options(-Wall -Wextra)
 add_executable(CortexM4Compiler
     src/main.c 
 	src/compiler.c
+	src/bootloader.c
 )
 target_compile_options(${PROJECT_NAME} PRIVATE -O2)
 target_link_options(${PROJECT_NAME} PRIVATE -s)
