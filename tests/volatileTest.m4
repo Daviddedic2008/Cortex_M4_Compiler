@@ -1,7 +1,15 @@
-# blink some LED or something #
-while 1{
-	1 volatile deref 101010 = 1; # placeholder addr for now #
-	word idx = 0;
-	while idx less 100000{idx += 1; idx -= 1; idx += 1;} # delay #
-	1 volatile deref 101010 = 0; # placeholder addr for now #
+#program to blink green onboard LED (bound to pin d12 i think?) on the STM32F407VGT6-DISC board#
+
+1 volatile deref 1073887280 = (1 volatile deref 1073887280) | 8;
+
+1 volatile deref 1073875968 = (1 volatile deref 1073875968) | 16777216;
+
+while (1) {
+    1 volatile deref 1073875988 = (1 volatile deref 1073875988) ^ 4096;
+
+    word i = 0; 
+    word max = 10000000;
+    while (i less max) {
+        i += 1;
+    }
 }

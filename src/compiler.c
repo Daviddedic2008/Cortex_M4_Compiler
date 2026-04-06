@@ -60,7 +60,7 @@ typedef struct{
 
 #define isNullChar(c) (c == ' ' || c == '\n' || c == '\t')
 
-const char ops[] = { '+', '-', '*', '%', '=', '/', '\\', '>', '<', '&', '|', 'T'};
+const char ops[] = { '+', '-', '*', '%', '=', '/', '\\', '>', '<', '&', '|', '^', 'T'};
 const char singleTokens[] = { '(', ')', '{', '}', ';', 'T'};
 uint8_t isOp(const char c) {
 	for (char* tmp = ops; *tmp != 'T'; tmp++) { if (*tmp == c) { return 1; } }
@@ -85,7 +85,7 @@ forceinline void setSource(const char* c){src = c;}
 
 void nextToken(){
 	while(isNullChar(*src))src++;
-	if(*src == '#'){do{src++;}while(*src != '#'); src++; while(isNullChar(*src))src++;}
+	if(*src == '#'){do{src++;}while(*src != '#'); while(isNullChar(*src))src++;}
 	curToken = (token){(void*)0, 0, nullToken, 0}; if(*src == '\0')return;
 	curToken.str = src; curToken.len = 0;
 	if(isSingle(*src)){src++; curToken.len++;}
@@ -99,6 +99,7 @@ void nextToken(){
 		case '>': curToken.type = opToken; curToken.subtype = opRightShift;return;
 		case '<': curToken.type = opToken; curToken.subtype = opLeftShift;return;
 		case '|': curToken.type = opToken; curToken.subtype = opBitwiseOr;return;
+		case '^': curToken.type = opToken; curToken.subtype = opBitwiseXor;return;
 		case '&': curToken.type = opToken; curToken.subtype = opBitwiseAnd;return;
 		case '!': curToken.type = opToken; curToken.subtype = opBitwiseNot;return;
 		case '(': curToken.type = clampToken; curToken.subtype = parenthesesL;return;
@@ -160,47 +161,49 @@ typedef struct{
 	uint8_t destReg : 2;
 	uint8_t readRegs : 3;
 	uint8_t isLoadOrStore : 2;
+	uint8_t locked : 1;
 	uint8_t flagUsage;
 }opcodeTag;
 enum flagMods{fNone, fSet, fRead};
+enum lockedMods{unlkInstr, lkInstr};
 const opcodeTag opcodeTags[60] = {
-    [movw_reg_reg_32] = {1, 2, noLdStr, fNone}, 
-    [movw_lit_32]     = {1, 0, noLdStr, fNone}, 
-    [movt_lit_32]     = {1, 0, noLdStr, fNone},
+    [movw_reg_reg_32] = {1, 2, noLdStr, unlkInstr, fNone}, 
+    [movw_lit_32]     = {1, 0, noLdStr, unlkInstr, fNone}, 
+    [movt_lit_32]     = {1, 0, noLdStr, unlkInstr, fNone},
 
-    [ldrw_imm_32]  = {2, 1, isLoad, fNone}, [ldrw_reg_32]  = {2, 5, isLoad, fNone}, 
-    [ldrbw_imm_32] = {2, 1, isLoad, fNone}, [ldrbw_reg_32] = {2, 5, isLoad, fNone}, 
-    [ldrhw_imm_32] = {2, 1, isLoad, fNone}, [ldrhw_reg_32] = {2, 5, isLoad, fNone},
-    [ldr_imm_16]   = {1, 1, isLoad, fNone}, [ldr_gpr_imm_16] = {1, 1, isLoad, fNone}, 
-    [ldrb_imm_16]  = {1, 1, isLoad, fNone}, [ldrh_imm_16] = {1, 1, isLoad, fNone},
+    [ldrw_imm_32]  = {2, 1, isLoad, unlkInstr, fNone}, [ldrw_reg_32]  = {2, 5, isLoad, unlkInstr, fNone}, 
+    [ldrbw_imm_32] = {2, 1, isLoad, unlkInstr, fNone}, [ldrbw_reg_32] = {2, 5, isLoad, unlkInstr, fNone}, 
+    [ldrhw_imm_32] = {2, 1, isLoad, unlkInstr, fNone}, [ldrhw_reg_32] = {2, 5, isLoad, unlkInstr, fNone},
+    [ldr_imm_16]   = {1, 1, isLoad, unlkInstr, fNone}, [ldr_gpr_imm_16] = {1, 1, isLoad, unlkInstr, fNone}, 
+    [ldrb_imm_16]  = {1, 1, isLoad, unlkInstr, fNone}, [ldrh_imm_16] = {1, 1, isLoad, unlkInstr, fNone},
 	
 	[pop_32] = {1, 0, isLoad, fNone}, [push_32] = {0, 1, noLdStr, fNone},
 
-    [strw_imm_32]  = {0, 3, isStore, fNone}, [strw_reg_32]  = {0, 7, isStore, fNone},
-    [strbw_imm_32] = {0, 3, isStore, fNone}, [strbw_reg_32] = {0, 7, isStore, fNone},
-    [strhw_imm_32] = {0, 3, isStore, fNone}, [strhw_reg_32] = {0, 7, isStore, fNone},
-    [str_imm_16]   = {0, 3, isStore, fNone}, [strb_imm_16]  = {0, 3, isStore, fNone}, 
-    [strh_imm_16]  = {0, 3, isStore, fNone},
+    [strw_imm_32]  = {0, 3, isStore, unlkInstr, fNone}, [strw_reg_32]  = {0, 7, isStore, unlkInstr, fNone},
+    [strbw_imm_32] = {0, 3, isStore, unlkInstr, fNone}, [strbw_reg_32] = {0, 7, isStore, unlkInstr, fNone},
+    [strhw_imm_32] = {0, 3, isStore, unlkInstr, fNone}, [strhw_reg_32] = {0, 7, isStore, unlkInstr, fNone},
+    [str_imm_16]   = {0, 3, isStore, unlkInstr, fNone}, [strb_imm_16]  = {0, 3, isStore, unlkInstr, fNone}, 
+    [strh_imm_16]  = {0, 3, isStore, unlkInstr, fNone},
 
-    [subw_imm_32] = {0, 2, noLdStr, fNone}, [addw_imm_32] = {0, 2, noLdStr, fNone}, 
-    [subw_reg_32] = {0, 6, noLdStr, fNone}, [addw_reg_32] = {0, 6, noLdStr, fNone},
-    [subs_imm_32] = {0, 2, noLdStr, fSet},  [subs_reg_32] = {0, 6, noLdStr, fSet}, 
-    [mulw_reg_32] = {0, 6, noLdStr, fNone}, [divw_reg_32] = {0, 6, noLdStr, fNone},
-    [lsr_imm_32]  = {0, 2, noLdStr, fNone}, [lsl_imm_32]  = {0, 2, noLdStr, fNone}, 
-    [lsr_reg_32]  = {0, 6, noLdStr, fNone}, [lsl_reg_32]  = {0, 6, noLdStr, fNone},
-    [eors_reg_32] = {0, 6, noLdStr, fSet},  [eors_imm_32] = {0, 2, noLdStr, fSet}, 
-    [orrs_reg_32] = {0, 6, noLdStr, fSet},  [andw_imm_32] = {0, 2, noLdStr, fNone}, 
-    [andw_reg_32] = {0, 6, noLdStr, fNone}, [orrs_imm_32] = {0, 2, noLdStr, fSet}, 
-    [mvn_imm_32]  = {0, 0, noLdStr, fNone}, [mvn_reg_32]  = {0, 2, noLdStr, fNone},
-    [mov_lit_16]  = {0, 0, noLdStr, fNone}, [mov_reg_reg_16] = {0, 2, noLdStr, fNone}, 
-    [adds_reg_32]  = {0, 6, noLdStr, fSet}, [adds_imm_32]  = {0, 2, noLdStr, fSet},
+    [subw_imm_32] = {0, 2, noLdStr, unlkInstr, fNone}, [addw_imm_32] = {0, 2, noLdStr, unlkInstr, fNone}, 
+    [subw_reg_32] = {0, 6, noLdStr, unlkInstr, fNone}, [addw_reg_32] = {0, 6, noLdStr, unlkInstr, fNone},
+    [subs_imm_32] = {0, 2, noLdStr, unlkInstr, fSet},  [subs_reg_32] = {0, 6, noLdStr, unlkInstr, fSet}, 
+    [mulw_reg_32] = {0, 6, noLdStr, unlkInstr, fNone}, [divw_reg_32] = {0, 6, noLdStr, unlkInstr, fNone},
+    [lsr_imm_32]  = {0, 2, noLdStr, unlkInstr, fNone}, [lsl_imm_32]  = {0, 2, noLdStr, unlkInstr, fNone}, 
+    [lsr_reg_32]  = {0, 6, noLdStr, unlkInstr, fNone}, [lsl_reg_32]  = {0, 6, noLdStr, unlkInstr, fNone},
+    [eors_reg_32] = {0, 6, noLdStr, unlkInstr, fSet},  [eors_imm_32] = {0, 2, noLdStr, unlkInstr, fSet}, 
+    [orrs_reg_32] = {0, 6, noLdStr, unlkInstr, fSet},  [andw_imm_32] = {0, 2, noLdStr, unlkInstr, fNone}, 
+    [andw_reg_32] = {0, 6, noLdStr, unlkInstr, fNone}, [orrs_imm_32] = {0, 2, noLdStr, unlkInstr, fSet}, 
+    [mvn_imm_32]  = {0, 0, noLdStr, unlkInstr, fNone}, [mvn_reg_32]  = {0, 2, noLdStr, unlkInstr, fNone},
+    [mov_lit_16]  = {0, 0, noLdStr, unlkInstr, fNone}, [mov_reg_reg_16] = {0, 2, noLdStr, unlkInstr, fNone}, 
+    [adds_reg_32]  = {0, 6, noLdStr, unlkInstr, fSet}, [adds_imm_32]  = {0, 2, noLdStr, unlkInstr, fSet},
 
-    [cmp_reg_32] = {0, 3, noLdStr, fSet}, [cmp_imm_32] = {0, 1, noLdStr, fSet}, 
-    [ite_32] = {0, 0, noLdStr, fRead},    [it_32] = {0, 0, noLdStr, fRead}, 
-    [b_imm_32] = {0, 0, noLdStr, fNone},  [b_reg_32] = {0, 1, noLdStr, fNone}, 
-    [bc_reg_32] = {0, 1, noLdStr, fRead}, [bc_imm_32] = {0, 0, noLdStr, fRead},
-    [b_imm_16] = {0, 0, noLdStr, fNone},  [b_reg_16] = {0, 1, noLdStr, fNone}, 
-    [bc_imm_16] = {0, 0, noLdStr, fRead}, [bc_reg_16] = {0, 1, noLdStr, fRead}
+    [cmp_reg_32] = {0, 3, noLdStr, unlkInstr, fSet}, [cmp_imm_32] = {0, 1, noLdStr, unlkInstr, fSet}, 
+    [ite_32] = {0, 0, noLdStr, lkInstr, fRead},    [it_32] = {0, 0, noLdStr, lkInstr, fRead}, 
+    [b_imm_32] = {0, 0, noLdStr, lkInstr, fNone},  [b_reg_32] = {0, 1, noLdStr, lkInstr, fNone}, 
+    [bc_reg_32] = {0, 1, noLdStr, lkInstr, fRead}, [bc_imm_32] = {0, 0, noLdStr, lkInstr, fRead},
+    [b_imm_16] = {0, 0, noLdStr, lkInstr, fNone},  [b_reg_16] = {0, 1, noLdStr, lkInstr, fNone}, 
+    [bc_imm_16] = {0, 0, noLdStr, lkInstr, fRead}, [bc_reg_16] = {0, 1, noLdStr, lkInstr, fRead}
 };
 
 #define lim32 bc_imm_32
@@ -237,136 +240,73 @@ forceinline void endBlock(){
 	activeBlock = -1;
 }
 
-forceinline uint32_t setBits(uint32_t base, const uint32_t value, const uint8_t startBit){
-	const uint32_t mask = value << startBit; return base | mask;
-}	
 #define args (instructionFrame[instructionIdx - 1].args)
 forceinline void emitHex(const uint8_t instructionIdx) {
-	const uint8_t code = instructionFrame[instructionIdx - 1].code;
-	uint32_t emit = 0;
-	uint8_t wrSz = 4;
-	switch(code) {
-	case movw_reg_reg_32:
-	emit = setBits(emit, 0b1110101001001111, 16);
-	emit = setBits(emit, args[1].val, 8);
-	emit = setBits(emit, args[0].val, 0); 
-	break;
-	case movw_lit_32: 
-	case movt_lit_32:
-	emit = setBits(emit, 0b11110, 27);
-	emit = setBits(emit, (args[1].val >> 11) & 1, 26);
-	emit = setBits(emit, 0b100, 23);
-	emit = setBits(emit, code == movt_lit_32, 22);
-	emit = setBits(emit, 0b10, 20);
-	emit = setBits(emit, (args[1].val >> 12) & 0b1111, 16);
-	emit = setBits(emit, (args[1].val >> 8) & 0b111, 12);
-	emit = setBits(emit, args[0].val, 8);
-	emit = setBits(emit, args[1].val & 0b11111111, 0); 
-	break;
-	case ldrw_imm_32: case strw_imm_32: case ldrbw_imm_32: 
-	case strbw_imm_32: case ldrhw_imm_32: case strhw_imm_32:
-	emit = setBits(emit, 0b1111100, 25);
-	emit = setBits(emit, (code == ldrhw_imm_32 || code == strhw_imm_32) ? 1 : (code == ldrw_imm_32 || code == strw_imm_32 ? 2 : 0), 23);
-	emit = setBits(emit, (code == ldrw_imm_32 || code == ldrbw_imm_32 || code == ldrhw_imm_32), 22);
-	emit = setBits(emit, 1, 20);
-	emit = setBits(emit, args[0].val, 16);
-	emit = setBits(emit, args[1].val, 12);
-	emit = setBits(emit, args[2].val, 0); 
-	break;
-	case ldrw_reg_32: case strw_reg_32: case ldrbw_reg_32: 
-	case strbw_reg_32: case ldrhw_reg_32: case strhw_reg_32:
-	emit = setBits(emit, 0b1111100, 25);
-	emit = setBits(emit, (code == ldrhw_reg_32 || code == strhw_reg_32) ? 1 : (code == ldrw_reg_32 || code == strw_reg_32 ? 2 : 0), 23);
-	emit = setBits(emit, (code == ldrw_reg_32 || code == ldrbw_reg_32 || code == ldrhw_reg_32), 22);
-	emit = setBits(emit, args[0].val, 16);
-	emit = setBits(emit, args[1].val, 12);
-	emit = setBits(emit, args[2].val, 0); 
-	break;
-	case addw_imm_32: case subw_imm_32: case subs_imm_32: case adds_imm_32:
-    emit = setBits(emit, 0b11110, 27);
-    emit = setBits(emit, (args[2].val >> 11) & 1, 26);
-    uint8_t immOp = (code == addw_imm_32 || code == adds_imm_32) ? (modifierFrame ? 0b01010 : 0b01000) : (modifierFrame ? 0b01011 : 0b01010);
-    emit = setBits(emit, immOp | (code == subs_imm_32 || code == adds_imm_32), 20);
-    emit = setBits(emit, args[0].val, 16);
-    emit = setBits(emit, (args[2].val >> 8) & 0b111, 12);
-    emit = setBits(emit, args[1].val, 8);
-    emit = setBits(emit, args[2].val & 0xFF, 0); 
+    const uint8_t code = instructionFrame[instructionIdx - 1].code;
+    uint32_t emit = 0; uint8_t wrSz = 4;
+
+    switch(code) {
+    case movw_reg_reg_32: 
+    emit = 0xEA4F0000 | (args[1].val << 16) | args[0].val; break;
+    case movw_lit_32: case movt_lit_32:
+	emit = (0xF2400000 | ((code == movt_lit_32) << 22)) | ((args[1].val >> 12) << 16) | (((args[1].val >> 11) & 1) << 26) | (args[0].val << 8) | (((args[1].val >> 8) & 7) << 12) | (args[1].val & 0xFF);
     break;
-	case addw_reg_32: case subw_reg_32: case subs_reg_32: case adds_reg_32:
-    emit = setBits(emit, 0b1110101, 25);
-    uint8_t regOp = (code == addw_reg_32 || code == adds_reg_32) ? (modifierFrame ? 0b1010 : 0b1000) : (modifierFrame ? 0b1110 : 0b1101);
-    emit = setBits(emit, regOp | (code == subs_reg_32 || code == adds_reg_32), 20);
-    emit = setBits(emit, args[0].val, 16);
-    emit = setBits(emit, args[1].val, 8);
-    emit = setBits(emit, args[2].val, 0); 
-    break;
-	case lsr_imm_32: 
-	case lsl_imm_32:
-	emit = setBits(emit, 0b1110101001001111, 16);
-	emit = setBits(emit, (args[2].val >> 2) & 0b111, 12);
-	emit = setBits(emit, args[1].val, 8);
-	emit = setBits(emit, (args[2].val & 0b11) << 6 | (code == lsr_imm_32 ? 0b100000 : 0), 0);
-	emit = setBits(emit, args[0].val, 0); 
+    case ldrw_imm_32: case strw_imm_32: case ldrbw_imm_32: case strbw_imm_32: case ldrhw_imm_32: case strhw_imm_32: {
+    uint32_t op = (code == ldrbw_imm_32 || code == strbw_imm_32) ? 0xF8100000 : (code == ldrhw_imm_32 || code == strhw_imm_32 ? 0xF8300000 : 0xF8500000);
+	emit = op | ((code == ldrw_imm_32 || code == ldrbw_imm_32 || code == ldrhw_imm_32) << 20) | (args[0].val << 16) | (args[1].val << 12) | (args[2].val & 0xFFF);
+    } break;
+    case ldrw_reg_32: case strw_reg_32: case ldrbw_reg_32: case strbw_reg_32: case ldrhw_reg_32: case strhw_reg_32: {
+	uint32_t op = (code == ldrbw_reg_32 || code == strbw_reg_32) ? 0xF8100000 : (code == ldrhw_reg_32 || code == strhw_reg_32 ? 0xF8300000 : 0xF8500000);
+	emit = op | ((code == ldrw_reg_32 || code == ldrbw_reg_32 || code == ldrhw_reg_32) << 20) | (args[0].val << 16) | (args[1].val << 12) | args[2].val;
+    } break;
+    case addw_imm_32: case subw_imm_32: case adds_imm_32: case subs_imm_32:
+	emit = (code == addw_imm_32 || code == adds_imm_32 ? 0xF2000000 : 0xF2A00000) | ((code == adds_imm_32 || code == subs_imm_32) << 20) | (args[1].val << 16) | (args[0].val << 8) | args[2].val;
 	break;
-	case mulw_reg_32: 
-	case divw_reg_32:
-	emit = setBits(emit, 0b11111011, 24);
-	emit = setBits(emit, code == divw_reg_32 ? 0b1001 : 0, 20);
-	emit = setBits(emit, args[0].val, 16);
-	emit = setBits(emit, 0b1111, 12);
-	emit = setBits(emit, args[1].val, 8);
-	emit = setBits(emit, args[2].val, 0); 
+    case addw_reg_32: case subw_reg_32: case adds_reg_32: case subs_reg_32:
+	emit = (code == addw_reg_32 || code == adds_reg_32 ? 0xEB000000 : 0xEBA00000) | ((code == adds_reg_32 || code == subs_reg_32) << 20) | (args[1].val << 16) | (args[0].val << 8) | args[2].val;
 	break;
-	case ite_32: 
-	case it_32: 
-	wrSz = 2; 
-	emit = setBits(emit, 0xBF00 | (args[0].val << 4) | (code == ite_32 ? 0b0110 : 0b1000), 0); 
+    case andw_imm_32: case orrs_imm_32: case eors_imm_32:
+	emit = ((code == andw_imm_32) ? 0xF0000000 : (code == orrs_imm_32 ? 0xF0400000 : 0xF0800000)) | (args[1].val << 16) | (args[0].val << 8) | args[2].val;
 	break;
-	case cmp_reg_32: 
-	case cmp_imm_32:
-	emit = setBits(emit, code == cmp_imm_32 ? 0xF1B00F00 : 0xEBB00F00, 0);
-	emit = setBits(emit, args[0].val, 16);
-	emit = setBits(emit, args[1].val, 0); 
+    case andw_reg_32: case orrs_reg_32: case eors_reg_32:
+	emit = ((code == andw_reg_32) ? 0xEA000000 : (code == orrs_reg_32 ? 0xEA400000 : 0xEA800000)) | (args[1].val << 16) | (args[0].val << 8) | args[2].val;
 	break;
-	case andw_reg_32: case andw_imm_32: 
-	case orrs_reg_32: case orrs_imm_32: 
-	case eors_reg_32: case eors_imm_32:
-	emit = setBits(emit, (code == andw_reg_32 || code == andw_imm_32) ? 0xEA000000 : (code == orrs_reg_32 || code == orrs_imm_32 ? 0xEA400000 : 0xEA800000), 0);
-	emit = setBits(emit, args[0].val, 16);
-	emit = setBits(emit, args[1].val, 8);
-	emit = setBits(emit, args[2].val, 0); 
+    case mulw_reg_32: case divw_reg_32:
+	emit = 0xFB00F000 | (code == divw_reg_32 ? 0x900000 : 0) | (args[0].val << 16) | (args[1].val << 8) | args[2].val;
 	break;
-	case mvn_imm_32: 
-	case mvn_reg_32:
-	emit = setBits(emit, code == mvn_imm_32 ? 0xF06F0000 : 0xEA6F0000, 0);
-	emit = setBits(emit, args[0].val, 8);
-	emit = setBits(emit, args[1].val, 0); 
+
+    case lsr_imm_32: case lsl_imm_32:
+	emit = 0xEA4F0000 | ((args[2].val >> 2 & 7) << 12) | (args[1].val << 16) | ((args[2].val & 3) << 6) | (code == lsr_imm_32 ? 0x20 : 0) | args[0].val;
 	break;
-	case b_imm_32: 
-	case bc_imm_32:
-	emit = setBits(emit, (code == bc_imm_32 ? 0xF0008000 : 0xF0009000), 0);
-	emit = setBits(emit, args[0].val, 0); 
+    case lsr_reg_32: case lsl_reg_32:
+	emit = (code == lsr_reg_32 ? 0xFA20F000 : 0xFA00F000) | (args[1].val << 16) | (args[0].val << 8) | args[2].val;
 	break;
-	case ldrb_imm_16: case strb_imm_16: case ldrh_imm_16: 
-	case strh_imm_16: case ldr_imm_16: case str_imm_16: wrSz = 2;
-	emit = setBits(emit, (code == ldrb_imm_16 ? 0x7800 : code == strb_imm_16 ? 0x7000 : code == ldrh_imm_16 ? 0x8800 : code == strh_imm_16 ? 0x8000 : code == ldr_imm_16 ? 0x6800 : 0x6000), 0);
-	emit = setBits(emit, args[2].val << 6 | args[0].val << 3 | args[1].val, 0); 
-	break;
-	case b_imm_16: 
-	case bc_imm_16: wrSz = 2;
-	emit = setBits(emit, code == b_imm_16 ? 0xE000 : 0xD000, 0);
-	emit = setBits(emit, args[0].val, 0); 
-	break;
-	case mov_lit_16: wrSz = 2;
-	emit = setBits(emit, 0x2000 | (args[0].val << 8) | (args[1].val & 0xFF), 0); 
-	break;
-	case mov_reg_reg_16: wrSz = 2;
-	emit = setBits(emit, 0x4600 | (args[1].val << 3) | args[0].val, 0); 
-	break;
-	case add_reg_16: wrSz = 2;
-	emit = setBits(emit, (modifierFrame ? 0x4140 : 0x4400) | (args[1].val << 3) | args[0].val, 0); 
-	break;
-	} for(uint8_t b = 0; b < wrSz; b++) outputBuf[progAddr++] = (emit >> (b * 8)) & 0xFF;
+
+    case push_32: emit = 0xE92D0000 | args[0].val; break;
+    case pop_32:  emit = 0xE8BD0000 | args[0].val; break;
+
+    case ite_32: case it_32: wrSz = 2; emit = 0xBF00 | (args[0].val << 4) | (code == ite_32 ? 0x6 : 0x8); break;
+    case cmp_reg_32: case cmp_imm_32: emit = (code == cmp_imm_32 ? 0xF1B00F00 : 0xEBB00F00) | (args[0].val << 16) | args[1].val; break;
+    case b_imm_32: case bc_imm_32:   emit = (code == bc_imm_32 ? 0xF0008000 : 0xF0009000) | (args[0].val & 0xFFFFFF); break;
+    case b_reg_32: case bc_reg_32:   wrSz = 2; emit = 0x4700 | (args[0].val << 3); break;
+
+    case ldrb_imm_16: case strb_imm_16: case ldrh_imm_16: case strh_imm_16: case ldr_imm_16: case str_imm_16: case ldr_gpr_imm_16:
+        wrSz = 2; {
+		uint16_t bop = (code == ldrb_imm_16 ? 0x7800 : code == strb_imm_16 ? 0x7000 : code == ldrh_imm_16 ? 0x8800 : code == strh_imm_16 ? 0x8000 : (code == ldr_imm_16 || code == ldr_gpr_imm_16) ? 0x6800 : 0x6000);
+		emit = bop | (args[2].val << 6) | (args[0].val << 3) | args[1].val; 
+        } break;
+    case b_imm_16: case bc_imm_16: wrSz = 2; emit = (code == b_imm_16 ? 0xE000 : 0xD000 | (args[1].val << 8)) | (args[0].val & 0xFF); break;
+    case mov_lit_16: wrSz = 2; emit = 0x2000 | (args[0].val << 8) | (args[1].val & 0xFF); break;
+    case mov_reg_reg_16: wrSz = 2; emit = 0x4600 | (args[1].val << 3) | args[0].val; break;
+    case add_reg_16: wrSz = 2; emit = 0x4400 | (args[1].val << 3) | args[0].val; break;
+    }
+
+    if(wrSz == 4) {
+        outputBuf[progAddr++] = (emit >> 16) & 0xFF; outputBuf[progAddr++] = (emit >> 24) & 0xFF;
+        outputBuf[progAddr++] = emit & 0xFF; outputBuf[progAddr++] = (emit >> 8) & 0xFF;
+    } else {
+        outputBuf[progAddr++] = emit & 0xFF; outputBuf[progAddr++] = (emit >> 8) & 0xFF;
+    }
 }
 #undef args
 
@@ -387,15 +327,24 @@ forceinline uint8_t readsFromRegister(const instruction i, const int8_t reg){
 	} return 0;
 }
 forceinline uint8_t isPipelineBubble(const instruction i1, const instruction i2){
+	return 0;
 	if(i1.code == 0xFF) return 0; if(opcodeTags[i1.code].isLoadOrStore != noLdStr && opcodeTags[i1.code].isLoadOrStore == opcodeTags[i2.code].isLoadOrStore){
 		return 1;
 	} if(readsFromRegister(i2, getWriteReg(i1))) return 1;
 	return 0;
 }
+
+/*
+change instruction blocking to support internal blocks and external blocks
+internal blocks allow instructions from the outside to be reordered in but the inside order cannot change
+external blocks are the opposite
+also instruction-specific locks must be present for branches to stop them from being moved(anything after being moved before)
+*/
 enum orderTypes{noOrder, requiredOrder, redundantOrder};
 forceinline uint8_t orderRequirements(const instruction i1, const instruction i2){
+	return requiredOrder;
 	const int8_t rw1 = getWriteReg(i1); const int8_t rw2 = getWriteReg(i2);
-	if(readsFromRegister(i2, rw1) || readsFromRegister(i1, rw2)) return requiredOrder;
+	if(readsFromRegister(i2, rw1) || readsFromRegister(i1, rw2) || opcodeTags[i1.code].locked || opcodeTags[i2.code].locked) return requiredOrder;
 	if(opcodeTags[i1.code].flagUsage == fRead && opcodeTags[i2.code].flagUsage == fSet) return requiredOrder;
 	if(opcodeTags[i1.code].flagUsage == fSet && (opcodeTags[i2.code].flagUsage == fRead || opcodeTags[i2.code].flagUsage == fSet)) return requiredOrder;
 	if(rw1 == rw2 && rw1 != -1) return redundantOrder; 
@@ -563,8 +512,8 @@ const uint8_t instructionMap[6][3] = {
 void storeConstantInReg(const uint8_t reg, const uint32_t c) {
 	if(reg < 8 && c < UINT8_MAX){emitOpcode(mov_lit_16); emitArgument(reg, 3); emitArgument(c, 8);}
 	else{
-		emitOpcode(movw_lit_32); emitArgument(reg, 4); emitArgument(c, 16);
-		if(c > 65535){emitOpcode(movt_lit_32); emitArgument(reg, 4); emitArgument(c, 16);}
+		emitOpcode(movw_lit_32); emitArgument(reg, 4); emitArgument(c & 0xFFFF, 16);
+		if(c > 65535){emitOpcode(movt_lit_32); emitArgument(reg, 4); emitArgument(c >> 16, 16);}
 	}
 }
 void storeRegisterIntoStack(const uint8_t reg, const uint32_t stackOffset, const uint8_t sizeType) {
@@ -819,6 +768,7 @@ forceinline uint8_t returnImmOpcode(const uint8_t subtype, const uint16_t nt){
 		case opMul: return mulw_reg_32;
 		case opBitwiseAnd: return andw_imm_32;
 		case opBitwiseOr: return orrs_imm_32;
+		case opBitwiseXor: return eors_imm_32;
 		case opBitwiseNot: return mvn_imm_32;
 		case opRightShift: return lsr_imm_32;
 		case opLeftShift: return lsl_imm_32;
@@ -830,6 +780,7 @@ forceinline uint8_t returnImmOpcode(const uint8_t subtype, const uint16_t nt){
 		case opMul: return mulw_reg_32;
 		case opBitwiseAnd: return andw_reg_32;
 		case opBitwiseOr: return orrs_reg_32;
+		case opBitwiseXor: return eors_reg_32;
 		case opBitwiseNot: return mvn_reg_32;
 		case opRightShift: return lsr_reg_32;
 		case opLeftShift: return lsl_reg_32;
@@ -941,6 +892,7 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 			const uint8_t rEmpty = getEmptyRegister(curStackOffset + wr * 4, registerPermanence, noCheck);
 			loadRegisterFromRegPointer(rEmpty, addrReg, wr * 4, sizeType);
 		}while(wr > 0);
+		virtualRegFile[addrReg].dirty = addrd;
 		curCompilerTempSz += num32BitTransfers * 4; curStackOffset += num32BitTransfers* 4;
 		return (operand){curStackOffset - num32BitTransfers * 4, num32BitTransfers * 4, stackVar, 0, 0, registerPermanence};
 		}
@@ -991,6 +943,7 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 			}
 			
 		}while(num32BitTransfers > 0);
+		if(addrReg != -1){virtualRegFile[addrReg].dirty = addrd;}
 		curCompilerTempSz += num32BitTransfers * 4; curStackOffset += num32BitTransfers* 4;
 		return (operand){curStackOffset - num32BitTransfers * 4, num32BitTransfers * 4, stackVar, 0, 0, registerPermanence};
 		}
@@ -1038,7 +991,7 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 		return (operand){curStackOffset - num32BitTransfers * 4, num32BitTransfers * 4, stackVar, 0, 0, registerPermanence};
 		}
 		case opWriteback: case opWritebackVolatile:{
-		int8_t addrReg = -1;  uint32_t addrConst; uint8_t addrd;
+		int8_t addrReg = -1;  uint32_t addrConst; uint8_t addrd = empty;
 		const operand o3 = *operands; o2 = *(operands - 1); o1 = *(operands - 2);
 		const uint8_t sizeType = o1.val.value == halfSz ? halfSize : (o1.val.value == byteSz ? byteSize : wordSize);
 		const uint32_t num32BitTransfers = o1.val.value >= (UINT32_MAX - 1) ? 1 : o1.val.value;
@@ -1062,7 +1015,7 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 			flushRegisters();
 		}const uint32_t offsetCheck = curStackOffset + (curCompilerTempSz == 0);
 		for(uint32_t wIdx = 0; wIdx < num32BitTransfers; wIdx++){
-			uint8_t readReg;
+			uint8_t readReg, rdrd = empty;
 			if(wIdx >= (o3.size + 3) >> 2){readReg = moveConstantToRegs(0, UINT32_MAX, UINT16_MAX); virtualRegFile[readReg].dirty = empty;}
 			else switch(o3.operandType){
 				case constant:
@@ -1070,6 +1023,7 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 				break;
 				case stackVar:
 				readReg = moveOffsetToRegs(o3.val.stackOffset + wIdx * 4, o3.val.stackOffset + wIdx * 4, o3.registerPreference);
+				if(!isTemporary(o3.val.stackOffset + wIdx * 4)) rdrd = virtualRegFile[readReg].dirty;
 				break;
 			}
 			if(addrReg > -1){
@@ -1080,7 +1034,7 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 				}
 			}
 			else storeRegisterIntoStack(readReg, addrConst + wIdx * 4, sizeType);
-			if(virtualRegFile[readReg].stackOffset >= curStackOffset - curCompilerTempSz && virtualRegFile[readReg].stackOffset < offsetCheck) virtualRegFile[readReg].dirty = empty;
+			if(isTemporary(virtualRegFile[readReg].stackOffset) || o3.operandType == constant) virtualRegFile[readReg].dirty = empty;
 		}
 		if(addrReg > -1) virtualRegFile[addrReg].dirty = addrd;
 		curStackOffset += num32BitTransfers * 4; curCompilerTempSz += num32BitTransfers * 4;
@@ -1095,7 +1049,7 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 		switch(o3.operandType){
 			case constant: baseWbAddr += o3.val.value; 
 			for(uint8_t r = 0; r < maxGPRegs; r++) if(virtualRegFile[r].stackOffset >= o2.val.stackOffset + o3.val.value && virtualRegFile[r].stackOffset < o2.val.stackOffset + o3.val.value + num32BitTransfers * 4) 
-			virtualRegFile[r].dirty = empty; break;
+			virtualRegFile[r].dirty = empty; offd = empty; break;
 			case stackVar: for(uint8_t r = 0; r < maxGPRegs; r++) if(virtualRegFile[r].stackOffset >= o2.val.stackOffset && virtualRegFile[r].stackOffset < o2.val.stackOffset + num32BitTransfers * 4) flushRegister(r);
 			movedFromStack = 0; offsetRegister = moveOffsetToRegs(o3.val.stackOffset, o3.val.stackOffset, registerPermanence); 
 			if(!movedFromStack && !isTemporary(virtualRegFile[offsetRegister].stackOffset) && num32BitTransfers - 1) {offsetRegister = moveRegToRegs(offsetRegister, o3.val.stackOffset, registerPermanence);
@@ -1129,7 +1083,7 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 		}
 		return (operand){curStackOffset - num32BitTransfers * 4, num32BitTransfers * 4, stackVar, 0, 0, registerPermanence};
 		}
-		case opSub: case opAdd: case opBitwiseAnd: case opBitwiseOr: case opRightShift: case opLeftShift:{
+		case opSub: case opAdd: case opBitwiseAnd: case opBitwiseOr: case opBitwiseXor: case opRightShift: case opLeftShift:{
 		o2 = *operands, o1 = *(operands - 1);
 		startBlock();
 		const uint32_t num32BitAdds = ((o1.size > o2.size ? o1.size : o2.size) + 3) >> 2;
