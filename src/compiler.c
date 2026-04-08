@@ -286,7 +286,10 @@ forceinline void emitHex(const uint8_t instructionIdx) {
 	case cmp_imm_32: emit |= (0b111100011011 << 20) | (args[0].val << 16) | (0b1111 << 12) | (args[1].val & 0xFF); break;
 	case it_32: emit |= 0xBF00 | (args[0].val << 4) | 0b1000; wrSz = 2; break;
 	case ite_32: emit |= 0xBF00 | (args[0].val << 4) | 0b0100; wrSz = 2; break;
-	case b_imm_32: emit |= (0b11110 << 27) | (0b10 << 14) | (1 << 13) | (args[1].val & 0x7FFFFF); break;
+	case b_imm_32: const uint16_t off = args[0].val; const uint32_t s = (off >> 23) & 1, j1 = ((off >> 22) & 1) ^ 1 ^ s, j2 = ((off >> 21) & 1) ^ 1 ^ s;
+	const uint16_t h1 = 0xF000 | (s << 10) | ((off >> 11) & 0x3FF);
+	const uint16_t h2 = 0x9000 | (j1 << 13) | (j2 << 11) | (off & 0x7FF);
+	emit = (h1 << 16) | h2;
 	case bc_imm_32: emit |= (0b11110 << 27) | (args[0].val << 22) | (0b10 << 14) | (args[1].val & 0x3FFFF); break;
 	case b_reg_32: emit |= 0x4700 | (args[1].val << 3); wrSz = 2; break;
 	case bc_reg_32: emit |= 0x4700 | (args[1].val << 3); wrSz = 2; break;
@@ -297,13 +300,13 @@ forceinline void emitHex(const uint8_t instructionIdx) {
     default: wrSz = 2; emit = 0xBF00; break;
 	}
 	if(wrSz == 4) {
-		outputBuf[progAddr++] = (emit >> 16) & 0xFF; 
-		outputBuf[progAddr++] = (emit >> 24) & 0xFF;
-		outputBuf[progAddr++] = emit & 0xFF; 
-		outputBuf[progAddr++] = (emit >> 8) & 0xFF;
+		outputBuf[progAddr++] |= (emit >> 16) & 0xFF; 
+		outputBuf[progAddr++] |= (emit >> 24) & 0xFF;
+		outputBuf[progAddr++] |= emit & 0xFF; 
+		outputBuf[progAddr++] |= (emit >> 8) & 0xFF;
 	} else {
-		outputBuf[progAddr++] = emit & 0xFF; 
-		outputBuf[progAddr++] = (emit >> 8) & 0xFF;
+		outputBuf[progAddr++] |= emit & 0xFF; 
+		outputBuf[progAddr++] |= (emit >> 8) & 0xFF;
 	}
 }
 #undef args
@@ -1331,16 +1334,17 @@ forceinline void restoreSnapshot(const registerSnapshot snapshot){
 operator operatorStack[maxOperatorDepth]; operand operandStack[maxOperands];
 
 forceinline void backpatch(const uint32_t addressToPatch, const uint32_t memoryOffset, uint8_t* progOrigin){
-	const uint32_t trueJump = progAddr - addressToPatch - 4;
-	printf("%d %d\n", addressToPatch, memoryOffset);
+	const uint32_t trueJump = memoryOffset - addressToPatch - 4;
+	printf("BACKPATCH %d\n", trueJump);
 	uint16_t *p = (uint16_t*)&progOrigin[addressToPatch];
-	p[0] = (p[0] & 0xFFFC) | (trueJump >> 16); 
-	p[1] = 0x8000 | (trueJump & 0x3FFF);
+	uint32_t j = ((uint32_t)trueJump & 0x3FFFF)/2;
+	p[0] = (p[0] & 0xFFFC) | (j >> 16);
+	p[1] = (0x8000 | (j & 0x7FFF)) & 0xBFFF;
 }
 
 #define branchKeywordLimit 16
 typedef struct{
-	uint32_t jumpbackAddr;
+	uint32_t jumpbackAddr, backpatchAddr;
 	registerSnapshot snapshot;
 	uint32_t breakAddrs[branchKeywordLimit]; uint8_t numBreaks;
 	uint32_t continueAddrs[branchKeywordLimit]; uint8_t numContinues;
@@ -1506,12 +1510,12 @@ uint8_t assembleSource(const char* src, uint8_t* progOrigin){
 			case ifKey: case whileKey:
 			branchType[branchDepth] = curToken.subtype; break;
 			case volatileKey: persistentTokens.foundVolatile = 1; break;
-			case continueKey: emitOpcode(b_imm_32); emitArgument(4096, 12);
+			case continueKey: emitOpcode(b_imm_32); emitArgument(0, 12);
 			relativeLoopBlocks[relativeLoopIdx-1].continueAddrs[relativeLoopBlocks[relativeLoopIdx-1].numContinues] = progAddrC;
 			relativeLoopBlocks[relativeLoopIdx-1].numContinues++; break;
 			case breakKey: restoreSnapshot(relativeLoopBlocks[relativeLoopIdx-1].snapshot); 
 			relativeLoopBlocks[relativeLoopIdx-1].breakAddrs[relativeLoopBlocks[relativeLoopIdx-1].numBreaks] = progAddrC;
-			relativeLoopBlocks[relativeLoopIdx-1].numBreaks++; emitOpcode(b_imm_32); emitArgument(4096, 12);
+			relativeLoopBlocks[relativeLoopIdx-1].numBreaks++; emitOpcode(b_imm_32); emitArgument(0, 12);
 			break;
 		} break;
 		case clampToken:
@@ -1521,12 +1525,14 @@ uint8_t assembleSource(const char* src, uint8_t* progOrigin){
 			precedence += (curToken.subtype == parenthesesL) * 32 - (curToken.subtype == parenthesesR) * 32;
 			break;
 			case curlyBL:
+			const uint32_t spa = progAddrC;
 			const uint8_t opErr = flushOperatorStacks(registerPermanence); clearCompilerTemporaries();
 			if(opErr != noError) return opErr;
 			operatorIdx = 0; operand condition; uint8_t invalidBackpatch = 0;
 			switch(const uint8_t bt = branchType[branchDepth]){
 				case elseKey: goto skipConditionalParsing;
-				case whileKey: relativeLoopBlocks[relativeLoopIdx].jumpbackAddr = progAddrC; relativeLoopBlocks[relativeLoopIdx].snapshot = getSnapshot();
+				case whileKey: relativeLoopBlocks[relativeLoopIdx].jumpbackAddr = spa; relativeLoopBlocks[relativeLoopIdx].snapshot = getSnapshot();
+				relativeLoopBlocks[relativeLoopIdx].backpatchAddr = progAddrC;
 				case ifKey: condition = operandStack[--operandIdx];
 				switch(condition.operandType){
 					case constant:
@@ -1565,24 +1571,25 @@ uint8_t assembleSource(const char* src, uint8_t* progOrigin){
 				backpatchAddr = relativeIfBlocks[relativeIfIdx].jumpbackAddr;
 				restoreSnapshot(relativeIfBlocks[relativeIfIdx].snapshot); 
 				if(curToken.type == keywordToken && curToken.subtype == elseKey){branchType[branchDepth] = elseKey; 
-					relativeIfBlocks[relativeIfIdx].jumpbackAddr = progAddr; emitOpcode(b_imm_32); emitArgument(4096, 12);
+					relativeIfBlocks[relativeIfIdx].jumpbackAddr = progAddr; emitOpcode(b_imm_32); emitArgument(0, 12);
 				}break;
 				case elseKey:
 				backpatchAddr = relativeIfBlocks[relativeIfIdx].jumpbackAddr;
 				restoreSnapshot(relativeIfBlocks[relativeIfIdx].snapshot); break;
 				case whileKey:
-				backpatchAddr = relativeLoopBlocks[relativeLoopIdx].jumpbackAddr + 4;
+				backpatchAddr = relativeLoopBlocks[relativeLoopIdx].backpatchAddr;
 				for(uint8_t c = 0; c < relativeLoopBlocks[relativeLoopIdx].numContinues; c++){
 					printf("BACKPATCH CONTINUE\nLOCATION: %d  DATA: %d\n", relativeLoopBlocks[relativeLoopIdx].continueAddrs[c], backpatchAddr);
-				}restoreSnapshot(relativeLoopBlocks[relativeLoopIdx].snapshot); break;
-			}
-			if(branchType[branchDepth] == whileKey){
-				emitOpcode(b_imm_32); emitArgument((backpatchAddr - 4) - progAddr - 4, 16);
+				}
+				const int16_t bOff = relativeLoopBlocks[relativeLoopIdx].jumpbackAddr - progAddrC - 4;
+				emitOpcode(b_imm_32); emitArgument(bOff/2, 16);
 				for(uint8_t b = 0; b < relativeLoopBlocks[relativeLoopIdx].numBreaks; b++){
 					printf("BACKPATCH BREAK\nLOCATION: %d  DATA: %d\n", relativeLoopBlocks[relativeLoopIdx].breakAddrs[b], progAddr);
 				}
-			}if(backpatchAddr - 4 != UINT32_MAX){
-				printf("BACKPATCH %d\n", progAddrC - backpatchAddr - 4); 
+				restoreSnapshot(relativeLoopBlocks[relativeLoopIdx].snapshot); 
+				break;
+			}	
+			if(backpatchAddr - 4 != UINT32_MAX){
 				backpatch(backpatchAddr, progAddrC, progOrigin);
 			}
 		}

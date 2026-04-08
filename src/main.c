@@ -12,7 +12,7 @@ int main(int argc, char* argv[]){
 	size_t readCount = fread(buffer, 1, length, fptr);
     buffer[readCount] = '\0';
 	fclose(fptr);
-	uint8_t bufferArr[2048]; // output binary buffer
+	uint8_t bufferArr[2048] = {0}; // output binary buffer
 	const uint8_t errCd = assembleSource(buffer, bufferArr);
 	flash_with_bootstrap(bufferArr, 2048);
     free(buffer);
