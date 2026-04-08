@@ -29,7 +29,7 @@ enum tokenType {
 };
 
 enum opSubtype {
-	opAdd, opSub, opIncrement, opDecrement, opMul, opScaleM, opDiv, opScaleD, 
+	opAdd, opSub, opIncrement, opDecrement, opMul, opScaleM, opDiv, opScaleD, opNegate,
 	opRightShift, opLeftShift,
 	opEqual, opFree, opReference, opWriteback, opWritebackArr, opDereferenceArr,
 	opDereference, opBitwiseOr, opBitwiseAnd, opBitwiseNot, opBitwiseXor, opLogicalAnd,
@@ -85,7 +85,7 @@ forceinline void setSource(const char* c){src = c;}
 
 void nextToken(){
 	while(isNullChar(*src))src++;
-	if(*src == '#'){do{src++;}while(*src != '#'); while(isNullChar(*src))src++;}
+	if(*src == '#'){do{src++;}while(*src != '#'); src++; nextToken(); return;}
 	curToken = (token){(void*)0, 0, nullToken, 0}; if(*src == '\0')return;
 	curToken.str = src; curToken.len = 0;
 	if(isSingle(*src)){src++; curToken.len++;}
@@ -225,7 +225,7 @@ int8_t activeBlock = -1;
 
 #define makeInstruction(code) (instruction){.code = code, .numArgs = 0};
 #define frameDepth 16
-uint32_t progAddr; uint8_t* outputBuf; uint8_t modifierFrame;
+uint32_t progAddr, progAddrC; uint8_t* outputBuf; uint8_t modifierFrame;
 instruction instructionFrame[frameDepth]; uint8_t numInstructions = 0;
 instruction prevInstruction = (instruction){.code = 0xFF, .numArgs = 0xFF};
 
@@ -246,67 +246,65 @@ forceinline void emitHex(const uint8_t instructionIdx) {
     uint32_t emit = 0; uint8_t wrSz = 4;
 
     switch(code) {
-    case movw_reg_reg_32: 
-    emit = 0xEA4F0000 | (args[1].val << 16) | args[0].val; break;
-    case movw_lit_32: case movt_lit_32:
-	emit = (0xF2400000 | ((code == movt_lit_32) << 22)) | ((args[1].val >> 12) << 16) | (((args[1].val >> 11) & 1) << 26) | (args[0].val << 8) | (((args[1].val >> 8) & 7) << 12) | (args[1].val & 0xFF);
-    break;
-    case ldrw_imm_32: case strw_imm_32: case ldrbw_imm_32: case strbw_imm_32: case ldrhw_imm_32: case strhw_imm_32: {
-    uint32_t op = (code == ldrbw_imm_32 || code == strbw_imm_32) ? 0xF8100000 : (code == ldrhw_imm_32 || code == strhw_imm_32 ? 0xF8300000 : 0xF8500000);
-	emit = op | ((code == ldrw_imm_32 || code == ldrbw_imm_32 || code == ldrhw_imm_32) << 20) | (args[0].val << 16) | (args[1].val << 12) | (args[2].val & 0xFFF);
-    } break;
-    case ldrw_reg_32: case strw_reg_32: case ldrbw_reg_32: case strbw_reg_32: case ldrhw_reg_32: case strhw_reg_32: {
-	uint32_t op = (code == ldrbw_reg_32 || code == strbw_reg_32) ? 0xF8100000 : (code == ldrhw_reg_32 || code == strhw_reg_32 ? 0xF8300000 : 0xF8500000);
-	emit = op | ((code == ldrw_reg_32 || code == ldrbw_reg_32 || code == ldrhw_reg_32) << 20) | (args[0].val << 16) | (args[1].val << 12) | args[2].val;
-    } break;
-    case addw_imm_32: case subw_imm_32: case adds_imm_32: case subs_imm_32:
-	emit = (code == addw_imm_32 || code == adds_imm_32 ? 0xF2000000 : 0xF2A00000) | ((code == adds_imm_32 || code == subs_imm_32) << 20) | (args[1].val << 16) | (args[0].val << 8) | args[2].val;
-	break;
-    case addw_reg_32: case subw_reg_32: case adds_reg_32: case subs_reg_32:
-	emit = (code == addw_reg_32 || code == adds_reg_32 ? 0xEB000000 : 0xEBA00000) | ((code == adds_reg_32 || code == subs_reg_32) << 20) | (args[1].val << 16) | (args[0].val << 8) | args[2].val;
-	break;
-    case andw_imm_32: case orrs_imm_32: case eors_imm_32:
-	emit = ((code == andw_imm_32) ? 0xF0000000 : (code == orrs_imm_32 ? 0xF0400000 : 0xF0800000)) | (args[1].val << 16) | (args[0].val << 8) | args[2].val;
-	break;
-    case andw_reg_32: case orrs_reg_32: case eors_reg_32:
-	emit = ((code == andw_reg_32) ? 0xEA000000 : (code == orrs_reg_32 ? 0xEA400000 : 0xEA800000)) | (args[1].val << 16) | (args[0].val << 8) | args[2].val;
-	break;
-    case mulw_reg_32: case divw_reg_32:
-	emit = 0xFB00F000 | (code == divw_reg_32 ? 0x900000 : 0) | (args[0].val << 16) | (args[1].val << 8) | args[2].val;
-	break;
-
-    case lsr_imm_32: case lsl_imm_32:
-	emit = 0xEA4F0000 | ((args[2].val >> 2 & 7) << 12) | (args[1].val << 16) | ((args[2].val & 3) << 6) | (code == lsr_imm_32 ? 0x20 : 0) | args[0].val;
-	break;
-    case lsr_reg_32: case lsl_reg_32:
-	emit = (code == lsr_reg_32 ? 0xFA20F000 : 0xFA00F000) | (args[1].val << 16) | (args[0].val << 8) | args[2].val;
-	break;
-
-    case push_32: emit = 0xE92D0000 | args[0].val; break;
-    case pop_32:  emit = 0xE8BD0000 | args[0].val; break;
-
-    case ite_32: case it_32: wrSz = 2; emit = 0xBF00 | (args[0].val << 4) | (code == ite_32 ? 0x6 : 0x8); break;
-    case cmp_reg_32: case cmp_imm_32: emit = (code == cmp_imm_32 ? 0xF1B00F00 : 0xEBB00F00) | (args[0].val << 16) | args[1].val; break;
-    case b_imm_32: case bc_imm_32:   emit = (code == bc_imm_32 ? 0xF0008000 : 0xF0009000) | (args[0].val & 0xFFFFFF); break;
-    case b_reg_32: case bc_reg_32:   wrSz = 2; emit = 0x4700 | (args[0].val << 3); break;
-
-    case ldrb_imm_16: case strb_imm_16: case ldrh_imm_16: case strh_imm_16: case ldr_imm_16: case str_imm_16: case ldr_gpr_imm_16:
-        wrSz = 2; {
-		uint16_t bop = (code == ldrb_imm_16 ? 0x7800 : code == strb_imm_16 ? 0x7000 : code == ldrh_imm_16 ? 0x8800 : code == strh_imm_16 ? 0x8000 : (code == ldr_imm_16 || code == ldr_gpr_imm_16) ? 0x6800 : 0x6000);
-		emit = bop | (args[2].val << 6) | (args[0].val << 3) | args[1].val; 
-        } break;
-    case b_imm_16: case bc_imm_16: wrSz = 2; emit = (code == b_imm_16 ? 0xE000 : 0xD000 | (args[1].val << 8)) | (args[0].val & 0xFF); break;
-    case mov_lit_16: wrSz = 2; emit = 0x2000 | (args[0].val << 8) | (args[1].val & 0xFF); break;
-    case mov_reg_reg_16: wrSz = 2; emit = 0x4600 | (args[1].val << 3) | args[0].val; break;
-    case add_reg_16: wrSz = 2; emit = 0x4400 | (args[1].val << 3) | args[0].val; break;
-    }
-
-    if(wrSz == 4) {
-        outputBuf[progAddr++] = (emit >> 16) & 0xFF; outputBuf[progAddr++] = (emit >> 24) & 0xFF;
-        outputBuf[progAddr++] = emit & 0xFF; outputBuf[progAddr++] = (emit >> 8) & 0xFF;
-    } else {
-        outputBuf[progAddr++] = emit & 0xFF; outputBuf[progAddr++] = (emit >> 8) & 0xFF;
-    }
+    case mov_lit_16: emit |= (1 << 13) | (args[0].val << 8) | args[1].val; wrSz = 2; break;
+    case movw_lit_32: case movt_lit_32: emit |= (0b1111001001 << 22) | ((code == movt_lit_32) << 23) | (((args[1].val >> 11) & 1) << 26) | ((args[1].val >> 12 & 0xF) << 16) | ((args[1].val >> 8 & 0x7) << 12) | (args[0].val << 8) | (args[1].val & 0xFF); break;
+    case mov_reg_reg_16: emit |= (0b100011 << 10) | (args[1].val << 3) | (args[0].val); wrSz = 2; break;
+    case movw_reg_reg_32: emit |= (0b1110101001001111 << 16) | (args[0].val << 8) | args[1].val; break;
+    case mvn_imm_32: emit |= (0b1111000001101111 << 16) | (((args[1].val >> 11) & 1) << 26) | ((args[1].val >> 12 & 0xF) << 16) | ((args[1].val >> 8 & 0x7) << 12) | (args[0].val << 8) | (args[1].val & 0xFF); break;
+    case mvn_reg_32: emit |= (0b1110101001101111 << 16) | (args[0].val << 8) | args[1].val; break;
+    case ldr_imm_16: emit |= (0b1001 << 11) | (args[0].val << 8) | args[1].val; wrSz = 2; break;
+    case ldrw_imm_32: emit |= (0b111110001101 << 20) | (args[0].val << 16) | (args[1].val << 12) | args[2].val; break;
+    case ldr_gpr_imm_16: emit |= (0b01101 << 11) | (args[2].val << 6) | (args[0].val << 3) | args[1].val; wrSz = 2; break;
+    case ldrw_reg_32: emit |= (0b111110000101 << 20) | (args[0].val << 16) | (args[1].val << 12) | args[2].val; break;
+    case ldrb_imm_16: emit |= (0b01111 << 11) | (args[2].val << 6) | (args[0].val << 3) | args[1].val; wrSz = 2; break;
+    case ldrbw_imm_32: emit |= (0b111110001001 << 20) | (args[0].val << 16) | (args[1].val << 12) | args[2].val; break;
+    case ldrh_imm_16: emit |= (0b10001 << 11) | (args[2].val << 6) | (args[0].val << 3) | args[1].val; wrSz = 2; break;
+    case ldrhw_imm_32: emit |= (0b111110001011 << 20) | (args[0].val << 16) | (args[1].val << 12) | args[2].val; break;
+    case ldrhw_reg_32: emit |= (0b111110000011 << 20) | (args[0].val << 16) | (args[1].val << 12) | args[2].val; break;
+    case str_imm_16: emit |= (0b10010 << 11) | (args[1].val << 8) | args[2].val; wrSz = 2; break;
+    case strw_imm_32: emit |= (0b111110001100 << 20) | (args[0].val << 16) | (args[1].val << 12) | args[2].val; break;
+    case strw_reg_32: emit |= (0b111110000100 << 20) | (args[0].val << 16) | (args[1].val << 12) | args[2].val; break;
+    case strb_imm_16: emit |= (0b01110 << 11) | (args[2].val << 6) | (args[0].val << 3) | args[1].val; wrSz = 2; break;
+    case strbw_imm_32: emit |= (0b111110001000 << 20) | (args[0].val << 16) | (args[1].val << 12) | args[2].val; break;
+    case strh_imm_16: emit |= (0b10000 << 11) | (args[2].val << 6) | (args[0].val << 3) | args[1].val; wrSz = 2; break;
+    case strhw_imm_32: emit |= (0b111110001010 << 20) | (args[0].val << 16) | (args[1].val << 12) | args[2].val; break;
+    case strhw_reg_32: emit |= (0b111110000010 << 20) | (args[0].val << 16) | (args[1].val << 12) | args[2].val; break;
+    case addw_imm_32: case adds_imm_32: emit |= (0b11110001000 << 21) | ((code == adds_imm_32) << 20) | (args[1].val << 16) | (args[0].val << 8) | (args[2].val & 0xFF); break;
+    case subw_imm_32: case subs_imm_32: emit |= (0b11110001101 << 21) | ((code == subs_imm_32) << 20) | (args[1].val << 16) | (args[0].val << 8) | (args[2].val & 0xFF); break;
+    case addw_reg_32: case adds_reg_32: emit |= (0b11101011000 << 21) | ((code == adds_reg_32) << 20) | (args[1].val << 16) | (args[0].val << 8) | args[2].val; break;
+    case subw_reg_32: case subs_reg_32: emit |= (0b11101011101 << 21) | ((code == subs_reg_32) << 20) | (args[1].val << 16) | (args[0].val << 8) | args[2].val; break;
+    case lsl_imm_32: case lsr_imm_32: emit |= (0b1110101001001111 << 16) | (args[0].val << 8) | (args[1].val) | ((args[2].val & 0x1C) << 10) | ((args[2].val & 0x3) << 6) | (code == lsr_imm_32 ? (0b01 << 4) : 0); break;
+    case lsl_reg_32: case lsr_reg_32: emit |= (0b111110100000 << 20) | (code == lsr_reg_32 ? (1 << 21) : 0) | (args[1].val << 16) | (0b1111 << 12) | (args[0].val << 8) | args[2].val; break;
+    case mulw_reg_32: case divw_reg_32: emit |= (0b111110110000 << 20) | (code == divw_reg_32 ? (1 << 20) : 0) | (args[1].val << 16) | (0b1111 << 12) | (args[0].val << 8) | args[2].val; break;
+	case andw_imm_32: emit |= (0b111100000000 << 20) | (args[1].val << 16) | (args[0].val << 8) | (args[2].val & 0xFF); break;
+	case andw_reg_32: emit |= (0b111010100000 << 20) | (args[1].val << 16) | (args[0].val << 8) | args[2].val; break;
+	case orrs_imm_32: emit |= (0b111100000101 << 20) | (args[1].val << 16) | (args[0].val << 8) | (args[2].val & 0xFF); break;
+	case orrs_reg_32: emit |= (0b111010100101 << 20) | (args[1].val << 16) | (args[0].val << 8) | args[2].val; break;
+	case eors_imm_32: emit |= (0b111100001001 << 20) | (args[1].val << 16) | (args[0].val << 8) | (args[2].val & 0xFF); break;
+	case eors_reg_32: emit |= (0b111010101001 << 20) | (args[1].val << 16) | (args[0].val << 8) | args[2].val; break;
+	case cmp_reg_32: emit |= (0b111010111011 << 20) | (args[0].val << 16) | (0b1111 << 12) | args[1].val; break;
+	case cmp_imm_32: emit |= (0b111100011011 << 20) | (args[0].val << 16) | (0b1111 << 12) | (args[1].val & 0xFF); break;
+	case it_32: emit |= 0xBF00 | (args[0].val << 4) | 0b1000; wrSz = 2; break;
+	case ite_32: emit |= 0xBF00 | (args[0].val << 4) | 0b0100; wrSz = 2; break;
+	case b_imm_32: emit |= (0b11110 << 27) | (0b10 << 14) | (1 << 13) | (args[1].val & 0x7FFFFF); break;
+	case bc_imm_32: emit |= (0b11110 << 27) | (args[0].val << 22) | (0b10 << 14) | (args[1].val & 0x3FFFF); break;
+	case b_reg_32: emit |= 0x4700 | (args[1].val << 3); wrSz = 2; break;
+	case bc_reg_32: emit |= 0x4700 | (args[1].val << 3); wrSz = 2; break;
+	case b_imm_16: emit |= (0b11100 << 11) | (args[1].val & 0x7FF); wrSz = 2; break;
+	case bc_imm_16: emit |= (0b1101 << 12) | (args[0].val << 8) | (args[1].val & 0xFF); wrSz = 2; break;
+	case b_reg_16: emit |= 0x4700 | (args[1].val << 3); wrSz = 2; break;
+	case bc_reg_16: emit |= 0x4700 | (args[1].val << 3); wrSz = 2; break;
+    default: wrSz = 2; emit = 0xBF00; break;
+	}
+	if(wrSz == 4) {
+		outputBuf[progAddr++] = (emit >> 16) & 0xFF; 
+		outputBuf[progAddr++] = (emit >> 24) & 0xFF;
+		outputBuf[progAddr++] = emit & 0xFF; 
+		outputBuf[progAddr++] = (emit >> 8) & 0xFF;
+	} else {
+		outputBuf[progAddr++] = emit & 0xFF; 
+		outputBuf[progAddr++] = (emit >> 8) & 0xFF;
+	}
 }
 #undef args
 
@@ -433,7 +431,7 @@ void emitOpcode(const uint8_t code) {
 	}
 	if(numInstructions == frameDepth){
 		popInstruction();
-	}
+	} progAddrC += (code > lim32) ? 2 : 4;
 	instructionFrame[numInstructions++] = makeInstruction(code);
 	printf("\n");
 	fflush(stdout);
@@ -747,7 +745,8 @@ variableMetadata retrieveLocalVariable(const char* name, uint8_t len){
 //#############################################################################################################################################
 // OPERATION PARSER
 
-forceinline uint32_t evalImm(const uint32_t o1, const uint32_t o2, const uint8_t subtype){
+forceinline uint32_t evalImm(const uint32_t o1u, const uint32_t o2u, const uint8_t subtype){
+	const int32_t o1 = (int)o1u, o2 = (int)o2u;
 	switch(subtype){
 		case opAdd: return o1 + o2;
 		case opSub: return o1 - o2;
@@ -821,7 +820,7 @@ forceinline uint8_t numOperands(const uint8_t subtype){
 	switch(subtype){
 		case opWritebackArr: return 4;
 		case opWriteback: case opWritebackVolatile: case opDereferenceArr: return 3;
-		case opFree: case opLogicalNot: case opBitwiseNot: case opReference: return 1;
+		case opFree: case opLogicalNot: case opBitwiseNot: case opNegate: case opReference: return 1;
 		default: return 2;
 	}
 }
@@ -1235,8 +1234,10 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 		curStackOffset += 4; curCompilerTempSz += 4;
 		return (operand){curStackOffset - 4, 4, flagVar, flag_ne, 0, registerPermanence};
 		}
-		case opMul: case opDiv:{
-		o2 = *operands, o1 = *(operands - 1);
+		case opNegate:{
+		o1 = *(operands); o2 = (operand){-1, 4, constant, 0, 0, registerPermanence}; goto skpInitO;
+		case opMul: case opDiv:
+		o1 = *(operands-1); o2 = *operands; skpInitO:;
 		int8_t r1 = -1, r2 = -1; int64_t constantInMul = -1; uint8_t r1d, r2d;
 		switch(o1.operandType){
 			case constant: constantInMul = o1.val.value; break;
@@ -1296,7 +1297,7 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 
 // comments for clarity here, sorry for the confusion with precedences.
 const uint8_t operatorPrecedence[] = { 
-    4, 4, 1, 1, 5, 1, 5, 1, // Add, Sub, Inc, Dec, Mul, scaleMul, Div, scaleDiv
+    4, 4, 1, 1, 5, 1, 5, 1, 6, // Add, Sub, Inc, Dec, Mul, scaleMul, Div, scaleDiv, negate
     5, 5, 1, 1,          // Right Shift, Left Shift, Equal (Assignment), Free (Manual register management shi)
     8, 1, 1, 8, 8,    // Reference(Unary), Writeback, Dereference, Array Writeback, Array Dereference
     4, 4, 8, 4, // Bitwise: Or, And, Not(Unary), Xor
@@ -1331,7 +1332,10 @@ operator operatorStack[maxOperatorDepth]; operand operandStack[maxOperands];
 
 forceinline void backpatch(const uint32_t addressToPatch, const uint32_t memoryOffset, uint8_t* progOrigin){
 	const uint32_t trueJump = progAddr - addressToPatch - 4;
-	progOrigin[addressToPatch] |= trueJump; // fine for now
+	printf("%d %d\n", addressToPatch, memoryOffset);
+	uint16_t *p = (uint16_t*)&progOrigin[addressToPatch];
+	p[0] = (p[0] & 0xFFFC) | (trueJump >> 16); 
+	p[1] = 0x8000 | (trueJump & 0x3FFF);
 }
 
 #define branchKeywordLimit 16
@@ -1424,7 +1428,7 @@ forceinline void clearCompilerTemporaries(){
 	curStackOffset -= curCompilerTempSz; curCompilerTempSz = 0;
 }
 uint8_t assembleSource(const char* src, uint8_t* progOrigin){
-	initializeVirtualFlags(); initializeVirtualRegs(); curScope = 0; progAddr = 0;
+	initializeVirtualFlags(); initializeVirtualRegs(); curScope = 0; progAddr = 0, progAddrC = 0;
 	setSource(src); int8_t branchTypeFound = -1; outputBuf = progOrigin;
 	operatorIdx = 0; operandIdx = 0; relativeLoopIdx = 0; relativeIfIdx = 0;
 	uint32_t registerPermanence = 0, allocationSz = 0; 
@@ -1439,7 +1443,7 @@ uint8_t assembleSource(const char* src, uint8_t* progOrigin){
 		for(uint8_t digit = 0; digit < curToken.len; digit++){
 			literal *= 10;
 			literal += curToken.str[digit] - '0';
-		} if(persistentTokens.foundNegation){literal = ~literal + 1; persistentTokens.foundNegation = 0;}
+		}
 		if(previousToken.type == sizeToken){literal *= 4; persistentTokens.foundAllocation = 1; allocationSz = literal;}
 		operandStack[operandIdx++] = (operand){literal, 4, constant, 0, 0, registerPermanence};
 		break;
@@ -1469,6 +1473,7 @@ uint8_t assembleSource(const char* src, uint8_t* progOrigin){
 		break;
 		case opToken:
 		persistentTokens.foundAllocation = 0;
+		if(curToken.subtype == opSub && previousToken.type != constantToken && previousToken.type != identifierToken) curToken.subtype = opNegate;
 		if(persistentTokens.foundVolatile && curToken.subtype == opDereference){curToken.subtype = opDereferenceVolatile; persistentTokens.foundVolatile = 0;}
 		if(operatorIdx > 0){
 			uint8_t combined = combineOperators(operatorStack[operatorIdx-1].subtype, curToken.subtype);
@@ -1502,10 +1507,10 @@ uint8_t assembleSource(const char* src, uint8_t* progOrigin){
 			branchType[branchDepth] = curToken.subtype; break;
 			case volatileKey: persistentTokens.foundVolatile = 1; break;
 			case continueKey: emitOpcode(b_imm_32); emitArgument(4096, 12);
-			relativeLoopBlocks[relativeLoopIdx-1].continueAddrs[relativeLoopBlocks[relativeLoopIdx-1].numContinues] = progAddr;
+			relativeLoopBlocks[relativeLoopIdx-1].continueAddrs[relativeLoopBlocks[relativeLoopIdx-1].numContinues] = progAddrC;
 			relativeLoopBlocks[relativeLoopIdx-1].numContinues++; break;
 			case breakKey: restoreSnapshot(relativeLoopBlocks[relativeLoopIdx-1].snapshot); 
-			relativeLoopBlocks[relativeLoopIdx-1].breakAddrs[relativeLoopBlocks[relativeLoopIdx-1].numBreaks] = progAddr;
+			relativeLoopBlocks[relativeLoopIdx-1].breakAddrs[relativeLoopBlocks[relativeLoopIdx-1].numBreaks] = progAddrC;
 			relativeLoopBlocks[relativeLoopIdx-1].numBreaks++; emitOpcode(b_imm_32); emitArgument(4096, 12);
 			break;
 		} break;
@@ -1519,9 +1524,9 @@ uint8_t assembleSource(const char* src, uint8_t* progOrigin){
 			const uint8_t opErr = flushOperatorStacks(registerPermanence); clearCompilerTemporaries();
 			if(opErr != noError) return opErr;
 			operatorIdx = 0; operand condition; uint8_t invalidBackpatch = 0;
-			switch(branchType[branchDepth]){
+			switch(const uint8_t bt = branchType[branchDepth]){
 				case elseKey: goto skipConditionalParsing;
-				case whileKey: relativeLoopBlocks[relativeLoopIdx].jumpbackAddr = progAddr; relativeLoopBlocks[relativeLoopIdx].snapshot = getSnapshot();
+				case whileKey: relativeLoopBlocks[relativeLoopIdx].jumpbackAddr = progAddrC; relativeLoopBlocks[relativeLoopIdx].snapshot = getSnapshot();
 				case ifKey: condition = operandStack[--operandIdx];
 				switch(condition.operandType){
 					case constant:
@@ -1535,10 +1540,10 @@ uint8_t assembleSource(const char* src, uint8_t* progOrigin){
 					case stackVar:
 					operandStack[operandIdx++] = condition; operandStack[operandIdx] = (operand){0, 4, constant, 0, 0, registerPermanence};
 					assembleOp((operator){opCmpEqual, 0}, operandStack + operandIdx, registerPermanence); operandIdx -= 2;
-				} if(branchType[branchDepth] == ifKey) relativeIfBlocks[relativeIfIdx].jumpbackAddr = progAddr;
+				} if(bt == ifKey) {relativeIfBlocks[relativeIfIdx].jumpbackAddr = progAddrC;}
 				emptyFlags(); clearCompilerTemporaries();
 				break;
-			} if(!invalidBackpatch){emitOpcode(bc_imm_32); emitFlag(getOppositeFlag(virtualFlags.flagType)); emitArgument(4096, 12);}
+			} if(!invalidBackpatch){emitOpcode(bc_imm_32); emitFlag(getOppositeFlag(virtualFlags.flagType)); emitArgument(0, 12);}
 			switch(branchType[branchDepth]){
 				case whileKey: registerPermanence += 128;
 				if(invalidBackpatch) relativeLoopBlocks[relativeLoopIdx].jumpbackAddr = UINT32_MAX; break;
@@ -1557,7 +1562,7 @@ uint8_t assembleSource(const char* src, uint8_t* progOrigin){
 			for(uint8_t r = 0; r < maxGPRegs; r++) if(virtualRegFile[r].stackOffset >= curStackOffset) virtualRegFile[r].dirty = empty;
 			uint32_t backpatchAddr; switch(branchType[branchDepth]){
 				case ifKey:
-				backpatchAddr = relativeIfBlocks[relativeIfIdx].jumpbackAddr; 
+				backpatchAddr = relativeIfBlocks[relativeIfIdx].jumpbackAddr;
 				restoreSnapshot(relativeIfBlocks[relativeIfIdx].snapshot); 
 				if(curToken.type == keywordToken && curToken.subtype == elseKey){branchType[branchDepth] = elseKey; 
 					relativeIfBlocks[relativeIfIdx].jumpbackAddr = progAddr; emitOpcode(b_imm_32); emitArgument(4096, 12);
@@ -1577,8 +1582,8 @@ uint8_t assembleSource(const char* src, uint8_t* progOrigin){
 					printf("BACKPATCH BREAK\nLOCATION: %d  DATA: %d\n", relativeLoopBlocks[relativeLoopIdx].breakAddrs[b], progAddr);
 				}
 			}if(backpatchAddr - 4 != UINT32_MAX){
-				printf("BACKPATCH %d\n", progAddr - backpatchAddr - 4); 
-				backpatch(backpatchAddr, progAddr, progOrigin);
+				printf("BACKPATCH %d\n", progAddrC - backpatchAddr - 4); 
+				backpatch(backpatchAddr, progAddrC, progOrigin);
 			}
 		}
 		break;

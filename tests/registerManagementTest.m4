@@ -1,4 +1,4 @@
-# manual register management test #
+word x = 4;# manual register management test #
 word x = 0;
 free x;
 flush word x2 = 1;
