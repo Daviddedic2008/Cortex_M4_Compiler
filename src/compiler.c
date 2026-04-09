@@ -286,17 +286,11 @@ forceinline void emitHex(const uint8_t instructionIdx) {
 	case cmp_imm_32: emit |= (0b111100011011 << 20) | (args[0].val << 16) | (0b1111 << 12) | (args[1].val & 0xFF); break;
 	case it_32: emit |= 0xBF00 | (args[0].val << 4) | 0b1000; wrSz = 2; break;
 	case ite_32: emit |= 0xBF00 | (args[0].val << 4) | 0b0100; wrSz = 2; break;
-	case b_imm_32: const uint16_t off = args[0].val; const uint32_t s = (off >> 23) & 1, j1 = ((off >> 22) & 1) ^ 1 ^ s, j2 = ((off >> 21) & 1) ^ 1 ^ s;
-	const uint16_t h1 = 0xF000 | (s << 10) | ((off >> 11) & 0x3FF);
-	const uint16_t h2 = 0x9000 | (j1 << 13) | (j2 << 11) | (off & 0x7FF);
-	emit = (h1 << 16) | h2;
-	case bc_imm_32: emit |= (0b11110 << 27) | (args[0].val << 22) | (0b10 << 14) | (args[1].val & 0x3FFFF); break;
-	case b_reg_32: emit |= 0x4700 | (args[1].val << 3); wrSz = 2; break;
-	case bc_reg_32: emit |= 0x4700 | (args[1].val << 3); wrSz = 2; break;
-	case b_imm_16: emit |= (0b11100 << 11) | (args[1].val & 0x7FF); wrSz = 2; break;
-	case bc_imm_16: emit |= (0b1101 << 12) | (args[0].val << 8) | (args[1].val & 0xFF); wrSz = 2; break;
-	case b_reg_16: emit |= 0x4700 | (args[1].val << 3); wrSz = 2; break;
-	case bc_reg_16: emit |= 0x4700 | (args[1].val << 3); wrSz = 2; break;
+	case bc_imm_32:{const uint8_t sign = ((int16_t)args[1].val < 0 ? 1 : 0);
+	emit |= (0b1111 << 28) | (sign << 26)| (args[0].val << 22) | ((args[1].val & 0b1111110000000000) << 6) | (sign << 13) | (1 << 15) | (sign << 11) | (args[1].val & 0b1111111111); break;}
+	case b_imm_32:{const uint8_t sign = ((int16_t)args[0].val < 0 ? 1 : 0);
+    emit |= (0b1111 << 28) | (sign << 26) | ((sign ? 0x3FF : 0) << 16) | ((args[0].val & 0xF800) << 5) | (0x17 << 11) | (args[0].val & 0x7FF);
+    break;}
     default: wrSz = 2; emit = 0xBF00; break;
 	}
 	if(wrSz == 4) {
@@ -1336,10 +1330,9 @@ operator operatorStack[maxOperatorDepth]; operand operandStack[maxOperands];
 forceinline void backpatch(const uint32_t addressToPatch, const uint32_t memoryOffset, uint8_t* progOrigin){
 	const uint32_t trueJump = memoryOffset - addressToPatch - 4;
 	printf("BACKPATCH %d\n", trueJump);
-	uint16_t *p = (uint16_t*)&progOrigin[addressToPatch];
-	uint32_t j = ((uint32_t)trueJump & 0x3FFFF)/2;
-	p[0] = (p[0] & 0xFFFC) | (j >> 16);
-	p[1] = (0x8000 | (j & 0x7FFF)) & 0xBFFF;
+	uint8_t *p = &progOrigin[addressToPatch];
+	const uint16_t tj = trueJump >> 1; p[2] |= tj & 0xFF; 
+	p[3] |= (tj >> 8) & 0b11; p[0] |= (tj >> 10) & 0b11111;
 }
 
 #define branchKeywordLimit 16
@@ -1552,7 +1545,7 @@ uint8_t assembleSource(const char* src, uint8_t* progOrigin){
 			} if(!invalidBackpatch){emitOpcode(bc_imm_32); emitFlag(getOppositeFlag(virtualFlags.flagType)); emitArgument(0, 12);}
 			switch(branchType[branchDepth]){
 				case whileKey: registerPermanence += 128;
-				if(invalidBackpatch) relativeLoopBlocks[relativeLoopIdx].jumpbackAddr = UINT32_MAX; break;
+				if(invalidBackpatch) relativeLoopBlocks[relativeLoopIdx].backpatchAddr = UINT32_MAX; break;
 				case ifKey: if(invalidBackpatch) relativeIfBlocks[relativeIfIdx].jumpbackAddr = UINT32_MAX;
 				relativeIfBlocks[relativeIfIdx].snapshot = getSnapshot();
 				break;
@@ -1571,7 +1564,7 @@ uint8_t assembleSource(const char* src, uint8_t* progOrigin){
 				backpatchAddr = relativeIfBlocks[relativeIfIdx].jumpbackAddr;
 				restoreSnapshot(relativeIfBlocks[relativeIfIdx].snapshot); 
 				if(curToken.type == keywordToken && curToken.subtype == elseKey){branchType[branchDepth] = elseKey; 
-					relativeIfBlocks[relativeIfIdx].jumpbackAddr = progAddr; emitOpcode(b_imm_32); emitArgument(0, 12);
+					relativeIfBlocks[relativeIfIdx].jumpbackAddr = progAddrC; emitOpcode(b_imm_32); emitArgument(0, 12);
 				}break;
 				case elseKey:
 				backpatchAddr = relativeIfBlocks[relativeIfIdx].jumpbackAddr;
@@ -1589,8 +1582,8 @@ uint8_t assembleSource(const char* src, uint8_t* progOrigin){
 				restoreSnapshot(relativeLoopBlocks[relativeLoopIdx].snapshot); 
 				break;
 			}	
-			if(backpatchAddr - 4 != UINT32_MAX){
-				backpatch(backpatchAddr, progAddrC, progOrigin);
+			if(backpatchAddr != UINT32_MAX){
+				backpatch(backpatchAddr, progAddrC, outputBuf);
 			}
 		}
 		break;
