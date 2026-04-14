@@ -60,7 +60,7 @@ typedef struct{
 
 #define isNullChar(c) (c == ' ' || c == '\n' || c == '\t')
 
-const char ops[] = { '+', '-', '*', '%', '=', '/', '\\', '>', '<', '&', '|', '^', 'T'};
+const char ops[] = { '+', '-', '*', '%', '=', '/', '\\', '>', '<', '&', '|', '^', '!', 'T'};
 const char singleTokens[] = { '(', ')', '{', '}', ';', 'T'};
 uint8_t isOp(const char c) {
 	for (char* tmp = ops; *tmp != 'T'; tmp++) { if (*tmp == c) { return 1; } }
@@ -185,18 +185,18 @@ const opcodeTag opcodeTags[60] = {
     [str_imm_16]   = {0, 3, isStore, unlkInstr, fNone}, [strb_imm_16]  = {0, 3, isStore, unlkInstr, fNone}, 
     [strh_imm_16]  = {0, 3, isStore, unlkInstr, fNone},
 
-    [subw_imm_32] = {0, 2, noLdStr, unlkInstr, fNone}, [addw_imm_32] = {0, 2, noLdStr, unlkInstr, fNone}, 
-    [subw_reg_32] = {0, 6, noLdStr, unlkInstr, fNone}, [addw_reg_32] = {0, 6, noLdStr, unlkInstr, fNone},
-    [subs_imm_32] = {0, 2, noLdStr, unlkInstr, fSet},  [subs_reg_32] = {0, 6, noLdStr, unlkInstr, fSet}, 
-    [mulw_reg_32] = {0, 6, noLdStr, unlkInstr, fNone}, [divw_reg_32] = {0, 6, noLdStr, unlkInstr, fNone},
-    [lsr_imm_32]  = {0, 2, noLdStr, unlkInstr, fNone}, [lsl_imm_32]  = {0, 2, noLdStr, unlkInstr, fNone}, 
-    [lsr_reg_32]  = {0, 6, noLdStr, unlkInstr, fNone}, [lsl_reg_32]  = {0, 6, noLdStr, unlkInstr, fNone},
-    [eors_reg_32] = {0, 6, noLdStr, unlkInstr, fSet},  [eors_imm_32] = {0, 2, noLdStr, unlkInstr, fSet}, 
-    [orrs_reg_32] = {0, 6, noLdStr, unlkInstr, fSet},  [andw_imm_32] = {0, 2, noLdStr, unlkInstr, fNone}, 
-    [andw_reg_32] = {0, 6, noLdStr, unlkInstr, fNone}, [orrs_imm_32] = {0, 2, noLdStr, unlkInstr, fSet}, 
-    [mvn_imm_32]  = {0, 0, noLdStr, unlkInstr, fNone}, [mvn_reg_32]  = {0, 2, noLdStr, unlkInstr, fNone},
-    [mov_lit_16]  = {0, 0, noLdStr, unlkInstr, fNone}, [mov_reg_reg_16] = {0, 2, noLdStr, unlkInstr, fNone}, 
-    [adds_reg_32]  = {0, 6, noLdStr, unlkInstr, fSet}, [adds_imm_32]  = {0, 2, noLdStr, unlkInstr, fSet},
+    [subw_imm_32] = {1, 2, noLdStr, unlkInstr, fNone}, [addw_imm_32] = {1, 2, noLdStr, unlkInstr, fNone}, 
+    [subw_reg_32] = {1, 6, noLdStr, unlkInstr, fNone}, [addw_reg_32] = {1, 6, noLdStr, unlkInstr, fNone},
+    [subs_imm_32] = {1, 2, noLdStr, unlkInstr, fSet},  [subs_reg_32] = {1, 6, noLdStr, unlkInstr, fSet}, 
+    [mulw_reg_32] = {1, 6, noLdStr, unlkInstr, fNone}, [divw_reg_32] = {1, 6, noLdStr, unlkInstr, fNone},
+    [lsr_imm_32]  = {1, 2, noLdStr, unlkInstr, fNone}, [lsl_imm_32]  = {1, 2, noLdStr, unlkInstr, fNone}, 
+    [lsr_reg_32]  = {1, 6, noLdStr, unlkInstr, fNone}, [lsl_reg_32]  = {1, 6, noLdStr, unlkInstr, fNone},
+    [eors_reg_32] = {1, 6, noLdStr, unlkInstr, fSet},  [eors_imm_32] = {1, 2, noLdStr, unlkInstr, fSet}, 
+    [orrs_reg_32] = {1, 6, noLdStr, unlkInstr, fSet},  [andw_imm_32] = {1, 2, noLdStr, unlkInstr, fNone}, 
+    [andw_reg_32] = {1, 6, noLdStr, unlkInstr, fNone}, [orrs_imm_32] = {1, 2, noLdStr, unlkInstr, fSet}, 
+    [mvn_imm_32]  = {1, 0, noLdStr, unlkInstr, fNone}, [mvn_reg_32]  = {1, 2, noLdStr, unlkInstr, fNone},
+    [mov_lit_16]  = {1, 0, noLdStr, unlkInstr, fNone}, [mov_reg_reg_16] = {1, 2, noLdStr, unlkInstr, fNone}, 
+    [adds_reg_32]  = {1, 6, noLdStr, unlkInstr, fSet}, [adds_imm_32]  = {1, 2, noLdStr, unlkInstr, fSet},
 
     [cmp_reg_32] = {0, 3, noLdStr, unlkInstr, fSet}, [cmp_imm_32] = {0, 1, noLdStr, unlkInstr, fSet}, 
     [ite_32] = {0, 0, noLdStr, lkInstr, fRead},    [it_32] = {0, 0, noLdStr, lkInstr, fRead}, 
@@ -217,42 +217,48 @@ const uint8_t armFlagCodes[6] = {
 enum argType{registerArg, constArg};
 typedef struct{uint16_t val; uint8_t type}arg;
 typedef struct{
-	uint8_t code; uint8_t numArgs;
+	uint8_t code; uint8_t numArgs, chainId;
 	arg args[3];
 }instruction;
-typedef struct{uint8_t startIdx, endIdx}block; block blocks[8]; uint8_t takenBlocks = 0;
-int8_t activeBlock = -1;
 
-#define makeInstruction(code) (instruction){.code = code, .numArgs = 0};
+uint16_t cId = 0, sc = 0;
+#define createChain() cId = ++sc
+#define endChain() cId = 0
+
+#define makeInstruction(code) (instruction){.code = code, .numArgs = 0, .chainId = cId};
 #define frameDepth 16
 uint32_t progAddr, progAddrC; uint8_t* outputBuf; uint8_t modifierFrame;
 instruction instructionFrame[frameDepth]; uint8_t numInstructions = 0;
-instruction prevInstruction = (instruction){.code = 0xFF, .numArgs = 0xFF};
-
-forceinline void startBlock(){
-	for(uint8_t mask = 1, bIdx = 0; mask < 0b10000000; mask = mask << 1, bIdx++){
-		if(!(takenBlocks & mask)){
-			takenBlocks |= mask; activeBlock = bIdx; blocks[bIdx].startIdx = numInstructions; blocks[bIdx].endIdx = numInstructions;
-		}
+instruction prevInstruction = (instruction){.code = 0xFF, .numArgs = 0xFF, .chainId = 0};
+uint8_t instructionBlockers[frameDepth]; uint8_t i0f = 0; uint16_t takenBlocks = 0;
+forceinline uint8_t addBlock(){
+	for(uint16_t mask = 1, i = 0; i < frameDepth; i++, mask << 1){
+		if(!(takenBlocks | mask)){takenBlocks |= mask; instructionBlockers[i] = numInstructions; return i;}
 	}
 }
-forceinline void endBlock(){
-	activeBlock = -1;
+forceinline void endBlock(const uint8_t bId){takenBlocks &= ~(1 << bId);}
+
+#define maxGPRegs 12
+enum isKnown{unknownVal, knownVal};
+typedef struct{uint32_t value; uint8_t status}regValue;
+regValue constInRegs[maxGPRegs];
+forceinline void clearConstRegs(){
+	for(uint8_t r = 0; r < maxGPRegs; r++) constInRegs[r] = (regValue){0, unknownVal};
 }
 
 #define args (instructionFrame[instructionIdx - 1].args)
 forceinline void emitHex(const uint8_t instructionIdx) {
     const uint8_t code = instructionFrame[instructionIdx - 1].code;
     uint32_t emit = 0; uint8_t wrSz = 4;
-
+	int32_t cImm = -1;
     switch(code) {
-    case mov_lit_16: emit |= (1 << 13) | (args[0].val << 8) | args[1].val; wrSz = 2; break;
-    case movw_lit_32: case movt_lit_32: emit |= (0b1111001001 << 22) | ((code == movt_lit_32) << 23) | (((args[1].val >> 11) & 1) << 26) | ((args[1].val >> 12 & 0xF) << 16) | ((args[1].val >> 8 & 0x7) << 12) | (args[0].val << 8) | (args[1].val & 0xFF); break;
-    case mov_reg_reg_16: emit |= (0b100011 << 10) | (args[1].val << 3) | (args[0].val); wrSz = 2; break;
+    case mov_lit_16: emit |= (1 << 13) | (args[0].val << 8) | args[1].val; wrSz = 2; cImm = args[1].val; break;
+    case movw_lit_32: case movt_lit_32: emit |= (0b1111001001 << 22) | ((code == movt_lit_32) << 23) | (((args[1].val >> 11) & 1) << 26) | ((args[1].val >> 12 & 0xF) << 16) | ((args[1].val >> 8 & 0x7) << 12) | (args[0].val << 8) | (args[1].val & 0xFF); 
+	cImm = args[1].val << (code == movt_lit_32 ? 16 : 0); break;
+    case mov_reg_reg_16: emit |= 0x4600 | ((args[0].val & 8) << 4) | (args[1].val << 3) | (args[0].val & 7); wrSz = 2; break;
     case movw_reg_reg_32: emit |= (0b1110101001001111 << 16) | (args[0].val << 8) | args[1].val; break;
-    case mvn_imm_32: emit |= (0b1111000001101111 << 16) | (((args[1].val >> 11) & 1) << 26) | ((args[1].val >> 12 & 0xF) << 16) | ((args[1].val >> 8 & 0x7) << 12) | (args[0].val << 8) | (args[1].val & 0xFF); break;
     case mvn_reg_32: emit |= (0b1110101001101111 << 16) | (args[0].val << 8) | args[1].val; break;
-    case ldr_imm_16: emit |= (0b1001 << 11) | (args[0].val << 8) | args[1].val; wrSz = 2; break;
+    case ldr_imm_16: emit |= (0b10011 << 11) | (args[0].val << 8) | (args[1].val >> 2); wrSz = 2; break;
     case ldrw_imm_32: emit |= (0b111110001101 << 20) | (args[0].val << 16) | (args[1].val << 12) | args[2].val; break;
     case ldr_gpr_imm_16: emit |= (0b01101 << 11) | (args[2].val << 6) | (args[0].val << 3) | args[1].val; wrSz = 2; break;
     case ldrw_reg_32: emit |= (0b111110000101 << 20) | (args[0].val << 16) | (args[1].val << 12) | args[2].val; break;
@@ -276,7 +282,7 @@ forceinline void emitHex(const uint8_t instructionIdx) {
     case lsl_imm_32: case lsr_imm_32: emit |= (0b1110101001001111 << 16) | (args[0].val << 8) | (args[1].val) | ((args[2].val & 0x1C) << 10) | ((args[2].val & 0x3) << 6) | (code == lsr_imm_32 ? (0b01 << 4) : 0); break;
     case lsl_reg_32: case lsr_reg_32: emit |= (0b111110100000 << 20) | (code == lsr_reg_32 ? (1 << 21) : 0) | (args[1].val << 16) | (0b1111 << 12) | (args[0].val << 8) | args[2].val; break;
     case mulw_reg_32: case divw_reg_32: emit |= (0b111110110000 << 20) | (code == divw_reg_32 ? (1 << 20) : 0) | (args[1].val << 16) | (0b1111 << 12) | (args[0].val << 8) | args[2].val; break;
-	case andw_imm_32: emit |= (0b111100000000 << 20) | (args[1].val << 16) | (args[0].val << 8) | (args[2].val & 0xFF); break;
+	case andw_imm_32: emit |= (0xF000 << 16) | (args[1].val << 16) | ((args[2].val & 0x80) << 19) | (args[0].val << 8) | ((args[2].val & 0x70) << 8) | (args[2].val & 0x7F); wrSz = 4; break;
 	case andw_reg_32: emit |= (0b111010100000 << 20) | (args[1].val << 16) | (args[0].val << 8) | args[2].val; break;
 	case orrs_imm_32: emit |= (0b111100000101 << 20) | (args[1].val << 16) | (args[0].val << 8) | (args[2].val & 0xFF); break;
 	case orrs_reg_32: emit |= (0b111010100101 << 20) | (args[1].val << 16) | (args[0].val << 8) | args[2].val; break;
@@ -292,6 +298,14 @@ forceinline void emitHex(const uint8_t instructionIdx) {
     emit |= (0b1111 << 28) | (sign << 26) | ((sign ? 0x3FF : 0) << 16) | ((args[0].val & 0xF800) << 5) | (0x17 << 11) | (args[0].val & 0x7FF);
     break;}
     default: wrSz = 2; emit = 0xBF00; break;
+	} if(opcodeTags[code].destReg){constInRegs[args[opcodeTags[code].destReg-1].val].status = unknownVal;}
+	if(cImm != -1){
+		constInRegs[args[opcodeTags[code].destReg-1].val].status = knownVal;
+		switch(code){
+			case movt_lit_32:
+			constInRegs[args[opcodeTags[code].destReg-1].val].value |= cImm; break;
+			default: constInRegs[args[opcodeTags[code].destReg-1].val].value = cImm;
+		}
 	}
 	if(wrSz == 4) {
 		outputBuf[progAddr++] |= (emit >> 16) & 0xFF; 
@@ -322,48 +336,46 @@ forceinline uint8_t readsFromRegister(const instruction i, const int8_t reg){
 	} return 0;
 }
 forceinline uint8_t isPipelineBubble(const instruction i1, const instruction i2){
-	return 0;
+	if(opcodeTags[i1.code].isLoadOrStore != isLoad)
 	if(i1.code == 0xFF) return 0; if(opcodeTags[i1.code].isLoadOrStore != noLdStr && opcodeTags[i1.code].isLoadOrStore == opcodeTags[i2.code].isLoadOrStore){
 		return 1;
 	} if(readsFromRegister(i2, getWriteReg(i1))) return 1;
 	return 0;
 }
-
-/*
-change instruction blocking to support internal blocks and external blocks
-internal blocks allow instructions from the outside to be reordered in but the inside order cannot change
-external blocks are the opposite
-also instruction-specific locks must be present for branches to stop them from being moved(anything after being moved before)
-*/
 enum orderTypes{noOrder, requiredOrder, redundantOrder};
 forceinline uint8_t orderRequirements(const instruction i1, const instruction i2){
-	return requiredOrder;
 	const int8_t rw1 = getWriteReg(i1); const int8_t rw2 = getWriteReg(i2);
-	if(readsFromRegister(i2, rw1) || readsFromRegister(i1, rw2) || opcodeTags[i1.code].locked || opcodeTags[i2.code].locked) return requiredOrder;
+	if(i1.chainId == i2.chainId && i1.chainId != 0) return requiredOrder;
+	if(readsFromRegister(i2, rw1) || readsFromRegister(i1, rw2) || opcodeTags[i1.code].locked || opcodeTags[i2.code].locked || (rw1 == rw2 && rw1 != -1)) return requiredOrder;
 	if(opcodeTags[i1.code].flagUsage == fRead && opcodeTags[i2.code].flagUsage == fSet) return requiredOrder;
 	if(opcodeTags[i1.code].flagUsage == fSet && (opcodeTags[i2.code].flagUsage == fRead || opcodeTags[i2.code].flagUsage == fSet)) return requiredOrder;
 	if(rw1 == rw2 && rw1 != -1) return redundantOrder; 
 	return noOrder;
 }
 
+forceinline uint8_t checkBlocking(const uint8_t i1, const uint8_t i2){
+	for(uint16_t mask = 1, i = 0; i < frameDepth; i++, mask << 1){
+		if(mask & takenBlocks && instructionBlockers[i] > i1 && instructionBlockers[i] <= i2)
+		return 1;
+	} return 0;
+}
+
 forceinline void popInstruction(){
-	uint8_t instIdx = 1, lc = opcodeTags[prevInstruction.code].isLoadOrStore == isLoad;
-	if(isPipelineBubble(prevInstruction, instructionFrame[0]) || lc)
-	for(uint8_t inst = 1; inst < numInstructions; inst++){
-		for(uint8_t i2 = 0; i2 < inst; i2++) if(orderRequirements(instructionFrame[i2], instructionFrame[inst]) != noOrder) goto skpLoopIter;
-		instIdx = lc > 1 ? instIdx : inst+1; lc += opcodeTags[instructionFrame[inst].code].isLoadOrStore == isLoad;
-		skpLoopIter:;
-	}
-	for(uint8_t bIdx = 0; bIdx < 8; bIdx++){
-		if(((1<< bIdx) & takenBlocks)){
-			if(instIdx <= blocks[bIdx].startIdx || instIdx > blocks[bIdx].endIdx){
-			if(instIdx == blocks[bIdx].startIdx){blocks[bIdx].startIdx++; if(blocks[bIdx].startIdx == blocks[bIdx].endIdx) takenBlocks &= ~(1 << bIdx);}
-			else if(instIdx < blocks[bIdx].startIdx){blocks[bIdx].startIdx--; blocks[bIdx].endIdx--;}
-			}
+	uint8_t popInst = 0; uint8_t loadGroup = opcodeTags[prevInstruction.code].isLoadOrStore == isLoad;
+	if(isPipelineBubble(prevInstruction, instructionFrame[0])){
+		for(uint8_t checkPop = 1; checkPop < numInstructions; checkPop++){
+			if(checkBlocking(0, checkPop)) continue;
+			for(uint8_t i2 = 0; i2 < checkPop; i2++) if(orderRequirements(instructionFrame[i2], instructionFrame[checkPop]) != noOrder) goto skpLp;
+			popInst = loadGroup > 1 ? popInst : checkPop; loadGroup += opcodeTags[instructionFrame[checkPop].code].isLoadOrStore == isLoad; skpLp:;
 		}
 	}
-	numInstructions--; 
-	emitHex(instIdx); prevInstruction = instructionFrame[instIdx-1]; shiftInstructionFrame(instIdx-1);
+	for(uint8_t bIdx = 0; bIdx < frameDepth; bIdx++){
+		if(((1<< bIdx) & takenBlocks) && instructionBlockers[bIdx] >= numInstructions){
+			if(instructionBlockers[bIdx] > 0) instructionBlockers[bIdx]--;
+			else endBlock(bIdx);
+		}
+	}
+	numInstructions--; emitHex(popInst+1); prevInstruction = instructionFrame[popInst]; shiftInstructionFrame(popInst);
 }
 
 void emitOpcode(const uint8_t code) {
@@ -371,6 +383,7 @@ void emitOpcode(const uint8_t code) {
 	case movw_reg_reg_32: printf("MOVW_REG_REG_32"); break;
 	case movw_lit_32:    printf("MOVW_LIT_32"); break;
 	case movt_lit_32:    printf("MOVT_LIT_32"); break;
+	case mvn_reg_32:    printf("MVN_REG_32"); break;
 	case ldrw_imm_32:    printf("LDRW_IMM_32"); break;
 	case strw_imm_32:    printf("STRW_IMM_32"); break;
 	case ldrw_reg_32:    printf("LDRW_REG_32"); break;
@@ -423,8 +436,6 @@ void emitOpcode(const uint8_t code) {
 	case mov_reg_reg_16: printf("MOV_REG_REG_16"); break;
 	case b_imm_16:		 printf("B_IMM_16"); break;
 	default:             printf("UNKNOWN_OP"); break;
-	}if(activeBlock != -1){
-		blocks[activeBlock].endIdx += 1;
 	}
 	if(numInstructions == frameDepth){
 		popInstruction();
@@ -482,7 +493,6 @@ typedef struct{
 	uint8_t dirty; uint8_t flagType;
 }flagData;
 
-#define maxGPRegs 12
 #define maxFlags 4
 registerData virtualRegFile[maxGPRegs]; // 10 data registers
 flagData virtualFlags; // only one value can be in the flag reg at once
@@ -753,6 +763,7 @@ forceinline uint32_t evalImm(const uint32_t o1u, const uint32_t o2u, const uint8
 		case opBitwiseAnd: return o1 & o2;
 		case opBitwiseOr: return o1 | o2;
 		case opBitwiseXor: return o1 ^ o2;
+		case opBitwiseNot: return ~o1;
 		case opCmpEqual: return o1 == o2;
 	}
 }
@@ -806,6 +817,7 @@ forceinline uint8_t getFlag(const uint8_t subtype){
 forceinline uint8_t getOppositeFlag(const uint8_t flag){
 	switch(flag){
 		case flag_eq: return flag_ne;
+		case flag_ne: return flag_eq;
 		case flag_gt: return flag_le;
 		case flag_lt: return flag_ge;
 		case flag_ge: return flag_lt;
@@ -974,7 +986,7 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 					loadRegisterFromStackR(readReg, offsetRegister, sizeType);
 				}else{
 					movedFromStack = 0;
-					const uint8_t r = moveOffsetToRegs(o2.val.value + wIdx * 4, o2.val.value + wIdx * 4, UINT16_MAX);
+					const uint8_t r = moveOffsetToRegs(baseRdAddr + wIdx * 4, baseRdAddr + wIdx * 4, registerPermanence);
 					if(movedFromStack) virtualRegFile[r].stackOffset = curStackOffset + wIdx * 4;
 					else{
 						const uint8_t rEmpty = getEmptyRegister(curStackOffset + wIdx * 4, registerPermanence, noCheck);
@@ -1081,7 +1093,7 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 		}
 		case opSub: case opAdd: case opBitwiseAnd: case opBitwiseOr: case opBitwiseXor: case opRightShift: case opLeftShift:{
 		o2 = *operands, o1 = *(operands - 1);
-		startBlock();
+		uint8_t cbi = addBlock();
 		const uint32_t num32BitAdds = ((o1.size > o2.size ? o1.size : o2.size) + 3) >> 2;
 		for(uint32_t wIdx = 0; wIdx < num32BitAdds; wIdx++){
 			int64_t constantInAdd = -1; int8_t r1 = -1; uint8_t r1d, r2d;
@@ -1091,7 +1103,7 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 				if(o1.val.value >= 2 << immSize(op.subtype, num32BitAdds) && o2.operandType != constant && !wIdx) r1 = moveConstantToRegs(o1.val.value, curStackOffset - curCompilerTempSz, UINT16_MAX);
 				break;
 				case stackVar:
-				r1 = moveOffsetToRegs(o1.val.stackOffset + wIdx * 4, o1.val.stackOffset + wIdx * 4, o1.registerPreference);
+				r1 = moveOffsetToRegs(o1.val.stackOffset + wIdx * 4, o1.val.stackOffset + wIdx * 4, registerPermanence);
 				r1d = virtualRegFile[r1].dirty;
 				break;
 			} if(r1 != -1) virtualRegFile[r1].dirty = locked;
@@ -1104,10 +1116,10 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 				break;
 				case stackVar:
 				if(r1 == -1){
-					r1 = moveOffsetToRegs(o2.val.stackOffset + wIdx * 4, o2.val.stackOffset + wIdx * 4, o2.registerPreference);
+					r1 = moveOffsetToRegs(o2.val.stackOffset + wIdx * 4, o2.val.stackOffset + wIdx * 4, registerPermanence);
 					r1d = virtualRegFile[r1].dirty; virtualRegFile[r1].dirty = locked;
 				} else {
-					r2 = moveOffsetToRegs(o2.val.stackOffset + wIdx * 4, o2.val.stackOffset + wIdx * 4, o2.registerPreference);
+					r2 = moveOffsetToRegs(o2.val.stackOffset + wIdx * 4, o2.val.stackOffset + wIdx * 4, registerPermanence);
 					r2d = virtualRegFile[r2].dirty; virtualRegFile[r2].dirty = locked;
 				}
 			}const uint32_t compilerSz = curStackOffset + (curCompilerTempSz == 0);
@@ -1121,12 +1133,30 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 			emitArgument(resultReg, 4); emitArgument(r1, 4); emitArgument(r2 == -1 ? constantInAdd : r2, r2 == -1 ? immSize(op.subtype, num32BitAdds) : 4);
 		}
 		curStackOffset += num32BitAdds * 4; curCompilerTempSz += num32BitAdds * 4;
-		endBlock();
+		endBlock(cbi);
 		return (operand){curStackOffset - num32BitAdds * 4, num32BitAdds * 4, stackVar, 0, 0, registerPermanence};
+		}
+		case opBitwiseNot:{
+		o1 = *operands;
+		const uint32_t num32BitInvs = (o1.size + 3) >> 2;
+		switch(o1.operandType){
+			case constant: return (operand){evalImm(o1.val.value, 0, op.subtype), 4, constant, 0, 0, registerPermanence};
+			case stackVar:
+			for(uint32_t wIdx = 0; wIdx < num32BitInvs; wIdx++){
+				const uint8_t r1 = moveOffsetToRegs(o1.val.stackOffset + wIdx * 4, o1.val.stackOffset + wIdx * 4, registerPermanence); uint8_t r1d;
+				if(isTemporary(virtualRegFile[r1].stackOffset)) virtualRegFile[r1].dirty = empty;
+				else{r1d = virtualRegFile[r1].dirty; virtualRegFile[r1].dirty = locked;}
+				const uint8_t resultReg = getEmptyRegister(curStackOffset + wIdx * 4, registerPermanence, noCheck);
+				virtualRegFile[r1].dirty = r1d; virtualRegFile[resultReg].dirty = dirty;
+				emitOpcode(mvn_reg_32); emitArgument(resultReg, 4); emitArgument(r1, 4);
+			}
+		}
+		curStackOffset += num32BitInvs * 4; curCompilerTempSz += num32BitInvs * 4;
+		return (operand){curStackOffset - num32BitInvs * 4, num32BitInvs * 4, stackVar, 0, 0, registerPermanence};
 		}
 		case opIncrement: case opDecrement:{
 		o2 = *operands, o1 = *(operands - 1);
-		startBlock();
+		uint8_t cbi = addBlock();
 		const uint32_t num32BitAdds = ((o1.size > o2.size ? o1.size : o2.size) + 3) >> 2;
 		for(uint32_t wIdx = 0; wIdx < num32BitAdds; wIdx++){
 			int64_t constantInAdd = -1; int8_t r1 = -1; uint8_t r1d, r2d;
@@ -1153,12 +1183,12 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 			emitArgument(r1, 4); emitArgument(r1, 4); emitArgument(r2 == -1 ? constantInAdd : r2, r2 == -1 ? immSize(op.subtype, num32BitAdds) : 4);
 		}
 		curStackOffset += num32BitAdds * 4; curCompilerTempSz += num32BitAdds * 4;
-		endBlock();
+		endBlock(cbi);
 		return (operand){curStackOffset - num32BitAdds * 4, num32BitAdds * 4, stackVar, 0, 0, registerPermanence};
 		}
 		case opCmpEqual: case opCmpGreater: case opCmpLess: case opCmpGEqual: case opCmpLEqual: case opCmpNEqual:{
 		o2 = *operands, o1 = *(operands - 1);
-		startBlock();
+		uint8_t cbi = addBlock();
 		flushFlags();
 		virtualFlags.flagType = op.subtype; virtualFlags.dirty = dirty;
 		if(o1.operandType == constant && o2.operandType == constant) return (operand) {4, 4, constant, 0, 0, registerPermanence};
@@ -1167,8 +1197,9 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 			int8_t r1 = -1; uint32_t constantInCmp = 0; uint8_t r1d, r2d;
 			switch(o1.operandType){
 				case constant:
-				if(o1.val.value >= UINT8_MAX) r1 = moveConstantToRegs(o1.val.value, curStackOffset - curCompilerTempSz, UINT16_MAX);
-				else constantInCmp = o1.val.value; break;
+				if(!wIdx){constantInCmp = o1.val.value; if(o1.val.value >= UINT8_MAX) r1 = moveConstantToRegs(o1.val.value, curStackOffset - curCompilerTempSz, UINT16_MAX);}
+				else constantInCmp = 0;
+				break;
 				case stackVar:
 				r1 = moveOffsetToRegs(o1.val.stackOffset + wIdx * 4, o1.val.stackOffset + wIdx * 4, o1.registerPreference);
 				r1d = virtualRegFile[r1].dirty;
@@ -1198,7 +1229,7 @@ operand assembleOp(const operator op, const operand* operands, const uint16_t re
 		}
 		virtualFlags.flagType = getFlag(op.subtype);
 		virtualFlags.stackOffset = curStackOffset; curStackOffset += 4; curCompilerTempSz += 4;
-		endBlock();
+		endBlock(cbi);
 		return (operand){curStackOffset - 4, 4, flagVar, getFlag(op.subtype), 0, registerPermanence};
 		}
 		case opLogicalAnd: case opLogicalOr:{
@@ -1335,16 +1366,24 @@ forceinline void backpatch(const uint32_t addressToPatch, const uint32_t memoryO
 	p[3] |= (tj >> 8) & 0b11; p[0] |= (tj >> 10) & 0b11111;
 }
 
+forceinline void backpatch_b_imm_32(uint32_t addr, uint32_t target, uint8_t* prog) {
+	int32_t v = (target - addr - 4) >> 1; uint32_t s = (v >> 23) & 1;
+	uint32_t j1 = ((v >> 22) ^ s ^ 1) & 1, j2 = ((v >> 21) ^ s ^ 1) & 1; uint8_t *p = &prog[addr];
+	p[0] = (v >> 11) & 0xFF; p[1] = 0xF0 | (s << 2) | ((v >> 19) & 3);
+	p[2] = v & 0xFF; p[3] = 0x90 | (j1 << 5) | (j2 << 3) | ((v >> 8) & 7);
+}
+
 #define branchKeywordLimit 16
 typedef struct{
 	uint32_t jumpbackAddr, backpatchAddr;
 	registerSnapshot snapshot;
 	uint32_t breakAddrs[branchKeywordLimit]; uint8_t numBreaks;
-	uint32_t continueAddrs[branchKeywordLimit]; uint8_t numContinues;
+	uint32_t continueAddrs[branchKeywordLimit]; uint8_t numContinues, cbi;
 }relativeLoopOffset;
 #define emptyLoopOffset (relativeLoopOffset){.numBreaks = 0}
 typedef struct{
 	uint32_t jumpbackAddr; registerSnapshot snapshot;
+	uint8_t cbi;
 }relativeIfOffset;
 relativeLoopOffset relativeLoopBlocks[maxBranchDepth]; uint8_t relativeLoopIdx;
 relativeIfOffset relativeIfBlocks[maxBranchDepth]; uint8_t relativeIfIdx;
@@ -1365,10 +1404,10 @@ forceinline void decrementScopeKey(const uint8_t keyType){
 }
 
 forceinline void incrementScope(){curScope++;}
-forceinline void incrementScopeKey(const uint8_t keyType){
+forceinline void incrementScopeKey(const uint8_t keyType, const uint8_t cbi){
 	incrementScope(); switch(keyType){
-	case ifKey: case elseKey: relativeIfIdx++; break;
-	case whileKey: relativeLoopIdx++;
+	case ifKey: case elseKey: relativeIfBlocks[relativeIfIdx].cbi = cbi; relativeIfIdx++; break;
+	case whileKey: relativeLoopBlocks[relativeLoopIdx].cbi = cbi; relativeLoopIdx++;
 	}
 }
 
@@ -1519,6 +1558,7 @@ uint8_t assembleSource(const char* src, uint8_t* progOrigin){
 			break;
 			case curlyBL:
 			const uint32_t spa = progAddrC;
+			const uint8_t cbi = addBlock();
 			const uint8_t opErr = flushOperatorStacks(registerPermanence); clearCompilerTemporaries();
 			if(opErr != noError) return opErr;
 			operatorIdx = 0; operand condition; uint8_t invalidBackpatch = 0;
@@ -1538,7 +1578,7 @@ uint8_t assembleSource(const char* src, uint8_t* progOrigin){
 					}break;
 					case stackVar:
 					operandStack[operandIdx++] = condition; operandStack[operandIdx] = (operand){0, 4, constant, 0, 0, registerPermanence};
-					assembleOp((operator){opCmpEqual, 0}, operandStack + operandIdx, registerPermanence); operandIdx -= 2;
+					assembleOp((operator){opCmpNEqual, 0}, operandStack + operandIdx, registerPermanence); operandIdx -= 1;
 				} if(bt == ifKey) {relativeIfBlocks[relativeIfIdx].jumpbackAddr = progAddrC;}
 				emptyFlags(); clearCompilerTemporaries();
 				break;
@@ -1552,41 +1592,44 @@ uint8_t assembleSource(const char* src, uint8_t* progOrigin){
 			}
 			registerPermanence += (branchType[branchDepth] == whileKey) * 128;
 			clearCompilerTemporaries();
-			skipConditionalParsing: incrementScopeKey(branchType[branchDepth]); 
+			skipConditionalParsing: incrementScopeKey(branchType[branchDepth], cbi); createChain(); 
 			branchDepth++; break;
-			case curlyBR:
+			case curlyBR:{
 			branchDepth--;
 			nextToken(); refreshToken = 0;
 			decrementScopeKey(branchType[branchDepth]);
 			for(uint8_t r = 0; r < maxGPRegs; r++) if(virtualRegFile[r].stackOffset >= curStackOffset) virtualRegFile[r].dirty = empty;
-			uint32_t backpatchAddr; switch(branchType[branchDepth]){
+			uint8_t cbi; uint32_t backpatchAddr; switch(branchType[branchDepth]){
 				case ifKey:
-				backpatchAddr = relativeIfBlocks[relativeIfIdx].jumpbackAddr;
+				backpatchAddr = relativeIfBlocks[relativeIfIdx].jumpbackAddr; cbi = relativeIfBlocks[relativeIfIdx].cbi;
 				restoreSnapshot(relativeIfBlocks[relativeIfIdx].snapshot); 
 				if(curToken.type == keywordToken && curToken.subtype == elseKey){branchType[branchDepth] = elseKey; 
 					relativeIfBlocks[relativeIfIdx].jumpbackAddr = progAddrC; emitOpcode(b_imm_32); emitArgument(0, 12);
 				}break;
 				case elseKey:
-				backpatchAddr = relativeIfBlocks[relativeIfIdx].jumpbackAddr;
+				backpatchAddr = relativeIfBlocks[relativeIfIdx].jumpbackAddr; cbi = relativeIfBlocks[relativeIfIdx].cbi;
 				restoreSnapshot(relativeIfBlocks[relativeIfIdx].snapshot); break;
 				case whileKey:
-				backpatchAddr = relativeLoopBlocks[relativeLoopIdx].backpatchAddr;
+				restoreSnapshot(relativeLoopBlocks[relativeLoopIdx].snapshot); 
+				backpatchAddr = relativeLoopBlocks[relativeLoopIdx].backpatchAddr; cbi = relativeLoopBlocks[relativeLoopIdx].cbi;
 				for(uint8_t c = 0; c < relativeLoopBlocks[relativeLoopIdx].numContinues; c++){
-					printf("BACKPATCH CONTINUE\nLOCATION: %d  DATA: %d\n", relativeLoopBlocks[relativeLoopIdx].continueAddrs[c], backpatchAddr);
+					printf("BACKPATCH CONTINUE\nLOCATION: %d  DATA: %d\n", relativeLoopBlocks[relativeLoopIdx].continueAddrs[c], progAddrC);
+					backpatch_b_imm_32(relativeLoopBlocks[relativeLoopIdx].continueAddrs[c], progAddrC, outputBuf);
 				}
 				const int16_t bOff = relativeLoopBlocks[relativeLoopIdx].jumpbackAddr - progAddrC - 4;
 				emitOpcode(b_imm_32); emitArgument(bOff/2, 16);
 				for(uint8_t b = 0; b < relativeLoopBlocks[relativeLoopIdx].numBreaks; b++){
-					printf("BACKPATCH BREAK\nLOCATION: %d  DATA: %d\n", relativeLoopBlocks[relativeLoopIdx].breakAddrs[b], progAddr);
+					printf("BACKPATCH BREAK\nLOCATION: %d  DATA: %d\n", relativeLoopBlocks[relativeLoopIdx].breakAddrs[b], progAddrC);
+					backpatch_b_imm_32(relativeLoopBlocks[relativeLoopIdx].breakAddrs[b], progAddrC, outputBuf);
 				}
-				restoreSnapshot(relativeLoopBlocks[relativeLoopIdx].snapshot); 
 				break;
 			}	
 			if(backpatchAddr != UINT32_MAX){
 				backpatch(backpatchAddr, progAddrC, outputBuf);
-			}
-		}
+			} endBlock(cbi);
+		} endChain();
 		break;
+		}
 		}
 		if(curToken.type != nullToken) previousToken = curToken;
 	}while(curToken.type != nullToken);

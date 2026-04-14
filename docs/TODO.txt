@@ -6,7 +6,8 @@
 * ldm/stm support & grouping loads to further optimize expensive loads & stores
 * add argument & return to scripts
 * add prologue/epilogue(push/pop all registers) before & after running scripts, allows for interop w/RTOS
-
+* refactor loops to remove redundant branches when possible
+* add constant propagation to registers as well, know whats in registers for as long as possible
 
 
 ~ [done]
@@ -27,3 +28,4 @@
 ~ peephole opcode reordering(remove some pipeline bubbles)
 ~ add blocks to instruction frames to force order in multi instruction ops while allowing for somewhat restrictive reordering
 ~ make order also depend on flag modifications/reads
+~ test compiler with LED blink script
