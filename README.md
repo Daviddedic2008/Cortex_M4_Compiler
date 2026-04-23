@@ -49,3 +49,11 @@ API used to compile a string
 ```c
 void assembleSource(const char* sourceString, const uint32_t programOrigin)
 ```
+
+
+
+Video of LED blink program working!
+
+
+https://github.com/user-attachments/assets/de6f6469-d82f-4d1e-b250-ffed52929fbb
+
